@@ -1,0 +1,32 @@
+name: Test build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            args: ''
+          - os: ubuntu-latest
+            args: -Dtarget=wasm32-emscripten
+          - os: ubuntu-latest
+            args: -Dtarget=wasm32-emscripten -Doptimize=fast
+          - os: windows-latest
+            args: -Doptimize=fast
+          - os: macos-latest
+            args: -Doptimize=fast
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.1
+      - if: runner.os == 'Linux' && !contains(matrix.args, 'wasm32-emscripten')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxext-dev libgles-dev libglx-dev
+      - if: contains(matrix.args, 'wasm32-emscripten')
+        run: zig build install-emsdk
+      - run: zig build ${{ matrix.args }}

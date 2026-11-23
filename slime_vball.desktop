@@ -1,6 +1,5 @@
 [Desktop Entry]
 Name=Slime Volleyball
-Exec=slime_vball
+Exec=slime-vball
 Type=Application
-Encoding=UTF-8
 Categories=Game;

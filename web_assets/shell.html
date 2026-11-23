@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slime Volleyball</title>
+  <style>
+    body { margin: 1rem; text-align: center; font-family: system-ui, sans-serif; }
+    canvas { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="750" height="375" tabindex="0" aria-label="Slime Volleyball court"></canvas>
+  <p>Player 1: A/D to move, W to jump. Player 2: Left/Right to move, Up to jump.</p>
+  <script>
+    const canvas = document.getElementById("canvas");
+    canvas.addEventListener("click", () => canvas.focus());
+    const gameKeys = ["a", "d", "w", "arrowleft", "arrowright", "arrowup"];
+    canvas.addEventListener("keydown", (event) => {
+      if (gameKeys.includes(event.key.toLowerCase())) {
+        event.preventDefault();
+      }
+    });
+    var Module = { canvas };
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

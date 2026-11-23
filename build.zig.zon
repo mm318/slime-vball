@@ -1,0 +1,23 @@
+.{
+    .name = .slime_vball,
+    .version = "1.0.0",
+    .minimum_zig_version = "0.17.1",
+    .fingerprint = 0x7b00b83d3faa511c,
+    .dependencies = .{
+        .sdl = .{ .path = "deps/sdl2" },
+        .emsdk = .{
+            .url = "git+https://github.com/emscripten-core/emsdk?ref=7.0.0#708dcbcc9ee23bc7d2dad44fc90db377e38b771c",
+            .hash = "N-V-__8AAFtICgCVOQFfkjwy7ir3VqTXKBIfbrfoKDuqstpy",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "deps",
+        "web_assets",
+        "slime_vball.desktop",
+        "README.md",
+        "COPYING",
+    },
+}
