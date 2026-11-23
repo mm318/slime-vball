@@ -9,356 +9,337 @@
 #include <emscripten.h>
 #endif
 
-#define POW2(x) x*x
+static const double FRAME_INTERVAL = 0.016;
+static const double POINT_DELAY = 1.5;
 
-/*************
- * CONSTANTS *
- *************/
+enum {
+	SCREEN_WIDTH = 750,
+	SCREEN_HEIGHT = 375,
+	COURT_UNITS = 1000,
+	PLAY_HEIGHT = 300,
+	NET_WIDTH = 4,
+	NET_PADDING = 5,
+	PLAYER_DRAW_RADIUS = 37,
+	PLAYER_EYE_X = 17,
+	PLAYER_EYE_Y = 13,
+	PLAYER_EYE_RADIUS = 7,
+	PLAYER_PUP_RADIUS = 3,
+	BALL_DRAW_RADIUS = 11,
+	MAX_SCORE = 6,
+	POINT_PADDING = 35,
+	POINT_RADIUS = 12,
+	REPLAY_FRAMES = 240,
+	BOT_TIERS = 3,
+};
 
-static const double FRAME_INTERVAL = 1.0 / 60.0;
+static const Uint32 BACKGROUND_COLOR = 0x0000FFFF;
+static const Uint32 GROUND_COLOR = 0x808080FF;
+static const Uint32 BALL_COLOR = 0xFFFF00FF;
+static const Uint32 PLAYER1_COLOR = 0x00FFFFFF;
+static const Uint32 PLAYER2_COLOR = 0xFF00FFFF;
+static const Uint32 NET_COLOR = 0xFFFFFFFF;
 
-const float EPSILON = 0.001f;
+// The reference game uses upward-positive court units. These values convert
+// its ball motion to pixels on the SDL court, where y increases downward.
+static const float PIXELS_PER_X_UNIT = (float)SCREEN_WIDTH / COURT_UNITS;
+static const float PIXELS_PER_Y_UNIT = (float)SCREEN_HEIGHT / COURT_UNITS;
+static const float BALL_GRAVITY = (float)SCREEN_HEIGHT / COURT_UNITS;
+static const float BALL_START_HEIGHT = 400.0f * SCREEN_HEIGHT / COURT_UNITS;
+static const float PLAYER_START_X = 200.0f * SCREEN_WIDTH / COURT_UNITS;
+static const float SLIME_CONTACT_RADIUS = 125.0f * SCREEN_HEIGHT / COURT_UNITS;
+static const float SLIME_MIN_CONTACT_RADIUS = 5.0f * SCREEN_HEIGHT / COURT_UNITS;
+static const float BALL_MAX_VX = 15.0f * SCREEN_WIDTH / COURT_UNITS;
+static const float BALL_MAX_VY = 22.0f * SCREEN_HEIGHT / COURT_UNITS;
+static const float BALL_WALL_INSET = 15.0f * SCREEN_WIDTH / COURT_UNITS;
+static const float BALL_GROUND_Y = PLAY_HEIGHT - 35.0f * SCREEN_HEIGHT / COURT_UNITS;
+static const float NET_REACH_X = 20.0f * SCREEN_WIDTH / COURT_UNITS;
+static const float NET_CONTACT_Y = PLAY_HEIGHT - 140.0f * SCREEN_HEIGHT / COURT_UNITS;
+static const float NET_TOP_REBOUND_Y = PLAY_HEIGHT - 130.0f * SCREEN_HEIGHT / COURT_UNITS;
+static const float PLAYER_RADIUS = 50.0f * SCREEN_WIDTH / COURT_UNITS;
+static const float PLAYER_NET_CLEARANCE = 5.0f * SCREEN_WIDTH / COURT_UNITS;
+static const float PLAYER_SPEED = 8.0f * SCREEN_WIDTH / COURT_UNITS;
+static const float PLAYER_JUMP_SPEED = 31.0f * SCREEN_HEIGHT / COURT_UNITS;
+static const float PLAYER_GRAVITY = 2.0f * SCREEN_HEIGHT / COURT_UNITS;
 
-/* Colors */
-const Uint32 BACKGROUND_COLOR = 0x0000FFFF;
-const Uint32 GROUND_COLOR     = 0x808080FF;
-const Uint32 BALL_COLOR       = 0xFFFF00FF;
-const Uint32 PLAYER1_COLOR    = 0x00FFFFFF;
-const Uint32 PLAYER2_COLOR    = 0xFF00FFFF;
-const Uint32 NET_COLOR        = 0xFFFFFFFF;
-
-/* Screen */
-const int SCREEN_WIDTH  = 750;
-const int SCREEN_HEIGHT = 375;
-
-/* Height of play area */
-const float PLAY_HEIGHT = 300.;
-
-/* Ball */
-const float BALL_RADIUS  = 10.;
-const float BALL_GRAVITY = 0.4;
-
-/* Slime */
-const float PLAYER_RADIUS     = 36.;
-const float PLAYER_EYE_X      = 17.;
-const float PLAYER_EYE_Y      = 13.;
-const float PLAYER_EYE_RADIUS = 7.;
-const float PLAYER_PUP_X      = 14.;
-const float PLAYER_PUP_Y      = 12.;
-const float PLAYER_PUP_RADIUS = 3.;
-
-/* Slime physics */
-const float PLAYER_MOVE_ACC   = 2.;
-const float PLAYER_MOVE_FRICT = 0.6;
-const float PLAYER_JUMP_VEL   = 11.;
-const float PLAYER_GRAVITY    = 0.7;
-
-/* Bounce speeds */
-const float MIN_BOUNCE_SPEED  = 3.;
-const float MAX_BOUNCE_SPEED  = 13.;
-
-/* Points */
-const int MAX_SCORE = 6;
-const int POINT_PADDING = 35;
-const int POINT_RADIUS = 12;
-const int POINT_DELAY = 1000;
-
-/* Net */
-const float NET_WIDTH   = 8.;
-const float NET_HEIGHT  = 50.;
-const float NET_PADDING = 8.;
-const float NET_EPSILON = 5.;
-
-/**************
- * STRUCTURES *
- **************/
-
-typedef struct vect {
+typedef struct {
 	float x;
 	float y;
-} vect_t;
+} vec_t;
 
-typedef struct ent {
-	vect_t pos;
-	SDL_Rect rect;
-	vect_t acc;
-	vect_t vel;
-} ent_t;
+typedef struct {
+	vec_t pos;
+	vec_t vel;
+} body_t;
 
-typedef struct player {
-	int human;
-	ent_t ent;
-} player_t;
+typedef struct {
+	int direction;
+	bool jump;
+} controls_t;
 
-typedef struct match {
-	player_t p1;
-	player_t p2;
-	ent_t ball;
-} match_t;
+typedef struct {
+	vec_t players[2];
+	vec_t ball;
+} positions_t;
 
-typedef struct game {
-	match_t match;
-	int s1;
-	int s2;
-	int winner;
+typedef enum {
+	SERVE,
+	RALLY,
+	POINT_BREAK,
+	REPLAY,
+} phase_t;
+
+typedef struct {
+	body_t players[2];
+	body_t ball;
+	int score[2];
+	int server;
+	bool solo;
+	int bot_tier;
+	bool paused;
+	phase_t phase;
+	double paused_at;
+	double point_deadline;
+	positions_t history[REPLAY_FRAMES];
+	int history_next;
+	int history_count;
+	int replay_index;
 } game_t;
 
-/*********
- * STATE *
- *********/
-
-game_t game;
-
+static game_t game = {.solo = true};
 static SDL_Window *window;
 static SDL_Surface *screen, *slime1, *slime2, *ball;
-
-SDL_Rect ground, net;
-
-ent_t net_full;
-
+static SDL_Rect ground, net;
 static double clock_frequency;
 static double next_frame;
-static double next_point;
 
-/***********
- * METHODS *
- ***********/
-
-/* Axis-aligned bounding-box collision */
-int aabbox_coll(ent_t *e1, ent_t *e2) {
-	if(e1->pos.y + e1->rect.h <= e2->pos.y) {
-		return 0;
-	}
-
-	if(e1->pos.y >= e2->pos.y + e2->rect.h) {
-		return 0;
-	}
-
-	if(e1->pos.x + e1->rect.w <= e2->pos.x) {
-		return 0;
-	}
-
-	if(e1->pos.x >= e2->pos.x + e2->rect.w) {
-		return 0;
-	}
-
-	return 1;
+static float clamp(float value, float low, float high) {
+	return fminf(fmaxf(value, low), high);
 }
 
-/* Player-ball collision handler */
-void pb_coll_handler(player_t *p, ent_t *ball) {
-	vect_t new_vel;
-	float speed, tmp;
+static void jump_player(body_t *player) {
+	if(player->pos.y == PLAY_HEIGHT) {
+		player->vel.y = -PLAYER_JUMP_SPEED;
+	}
+}
 
-	if(aabbox_coll(&p->ent, ball)) {
-		/* Magnitude of current ball + slime speed */
-		speed = sqrt( POW2(ball->vel.x) + POW2(ball->vel.y) )
-				+ sqrt( POW2(p->ent.vel.x)
-				+ POW2(p->ent.vel.y) ) + EPSILON;
-		if(speed < MIN_BOUNCE_SPEED) {
-			speed = MIN_BOUNCE_SPEED;
-		} else if(speed > MAX_BOUNCE_SPEED) {
-			speed = MAX_BOUNCE_SPEED;
-		}
+static void move_player(body_t *player, int side) {
+	const float net_edge = SCREEN_WIDTH / 2.0f + PLAYER_NET_CLEARANCE;
+	const float low = side == 0 ? PLAYER_RADIUS : net_edge + PLAYER_RADIUS;
+	const float high = side == 0 ? SCREEN_WIDTH - net_edge - PLAYER_RADIUS
+		: SCREEN_WIDTH - PLAYER_RADIUS;
+	player->pos.x = clamp(player->pos.x + player->vel.x, low, high);
 
-		/* Direction of movement */
-		new_vel.y = (ball->pos.y + BALL_RADIUS) -
-				(p->ent.pos.y + PLAYER_RADIUS);
-		new_vel.x = (ball->pos.x + BALL_RADIUS) -
-				(p->ent.pos.x + PLAYER_RADIUS);
-
-
-		/* Hit the flat side of the slime; adjust the normal vector */
-		if(new_vel.y > 0) {
-			if(ball->pos.x >= p->ent.pos.x + 2*PLAYER_RADIUS -
-					EPSILON) {
-				ball->vel.x = speed;
-				ball->vel.y = 0;
-			} else if(ball->pos.x + 2*BALL_RADIUS <= p->ent.pos.x -
-					EPSILON) {
-				ball->vel.x = -speed;
-				ball->vel.y = 0;
-			} else {
-				ball->vel.x = 0;
-				ball->vel.y = speed;
-			}
-		} else {
-			tmp = POW2(ball->pos.x + BALL_RADIUS
-					- (p->ent.pos.x + PLAYER_RADIUS))
-					+ POW2(ball->pos.y + BALL_RADIUS
-					- (p->ent.pos.y + PLAYER_RADIUS));
-			if(tmp < POW2(BALL_RADIUS + PLAYER_RADIUS)) {
-				ball->vel.x = new_vel.x;
-				ball->vel.y = new_vel.y;
-
-				tmp = sqrt( POW2(ball->vel.x)
-						+ POW2(ball->vel.y) )
-						+ EPSILON;
-
-				ball->vel.x = speed * ball->vel.x / tmp;
-				ball->vel.y = speed * ball->vel.y / tmp;
-			}
+	if(player->vel.y != 0) {
+		player->vel.y += PLAYER_GRAVITY;
+		player->pos.y += player->vel.y;
+		if(player->pos.y > PLAY_HEIGHT) {
+			player->pos.y = PLAY_HEIGHT;
+			player->vel.y = 0;
 		}
 	}
 }
 
-/* Update entity */
-void update_ent(ent_t *ent) {
-	ent->vel.x += ent->acc.x;
-	ent->vel.y += ent->acc.y;
+static bool collide_with_player(body_t *volley, const body_t *player) {
+	vec_t offset = {volley->pos.x - player->pos.x, volley->pos.y - player->pos.y};
+	float distance_sq = offset.x * offset.x + offset.y * offset.y;
+	if(offset.y >= 0 || distance_sq >= SLIME_CONTACT_RADIUS * SLIME_CONTACT_RADIUS
+			|| distance_sq <= SLIME_MIN_CONTACT_RADIUS * SLIME_MIN_CONTACT_RADIUS) {
+		return false;
+	}
 
-	ent->pos.x += ent->vel.x;
-	ent->pos.y += ent->vel.y;
+	float distance = sqrtf(distance_sq);
+	vec_t normal = {offset.x / distance, offset.y / distance};
+	volley->pos.x = player->pos.x + normal.x * SLIME_CONTACT_RADIUS;
+	volley->pos.y = player->pos.y + normal.y * SLIME_CONTACT_RADIUS;
+
+	// Project relative velocity in court units, where the axes scale differently.
+	float relative_x = (volley->vel.x - player->vel.x) / PIXELS_PER_X_UNIT;
+	float relative_y = (volley->vel.y - player->vel.y) / PIXELS_PER_Y_UNIT;
+	float approach = relative_x * normal.x + relative_y * normal.y;
+	if(approach <= 0) {
+		float shift_x = -2 * approach * normal.x * PIXELS_PER_X_UNIT;
+		float shift_y = -2 * approach * normal.y * PIXELS_PER_Y_UNIT;
+		volley->vel.x = clamp(volley->vel.x + player->vel.x + shift_x, -BALL_MAX_VX, BALL_MAX_VX);
+		volley->vel.y = clamp(volley->vel.y + player->vel.y + shift_y, -BALL_MAX_VY, BALL_MAX_VY);
+	}
+	return true;
 }
 
-/* Update entity rectangle */
-void update_rect(ent_t *ent) {
-	ent->rect.x = round(ent->pos.x);
-	ent->rect.y = round(ent->pos.y);
-}
-
-/* Update player position */
-void update_player(player_t *player) {
-	update_ent(&player->ent);
-
-	player->ent.vel.x *= PLAYER_MOVE_FRICT;
-
-	if(player->ent.pos.y > PLAY_HEIGHT - PLAYER_RADIUS) {
-		player->ent.pos.y = PLAY_HEIGHT - PLAYER_RADIUS;
-		player->ent.vel.y = 0;
-	}
-}
-
-/* Update all rectangles in a match */
-void update_match(game_t *game) {
-	int *score;
-
-	update_ent(&game->match.ball);
-
-	if(game->match.ball.pos.y > PLAY_HEIGHT - BALL_RADIUS*2) {
-		game->match.ball.pos.y = PLAY_HEIGHT - BALL_RADIUS*2;
-
-		if(game->match.ball.pos.x < SCREEN_WIDTH/2 - BALL_RADIUS) {
-			score = &game->s2;
-			game->winner = 2;
-		} else {
-			score = &game->s1;
-			game->winner = 1;
-		}
-
-		(*score)++;
+static void collide_with_net(body_t *volley) {
+	const float center = SCREEN_WIDTH / 2.0f;
+	float offset_x = volley->pos.x - center;
+	if(fabsf(offset_x) >= NET_REACH_X || volley->pos.y <= NET_CONTACT_Y) {
+		return;
 	}
 
-	/* Global player updates */
-	update_player(&game->match.p1);
-	update_player(&game->match.p2);
-
-	/* Player 1 x bounds */
-	if(game->match.p1.ent.pos.x < 0.) {
-		game->match.p1.ent.pos.x = 0.;
-	} else if(game->match.p1.ent.pos.x
-			> SCREEN_WIDTH/2 - NET_WIDTH/2 - 2*PLAYER_RADIUS - 2) {
-		game->match.p1.ent.pos.x
-			= SCREEN_WIDTH/2 - NET_WIDTH/2 - 2*PLAYER_RADIUS - 2;
-	}
-
-	/* Player 2 x bounds */
-	if(game->match.p2.ent.pos.x > SCREEN_WIDTH - 2*PLAYER_RADIUS - 1) {
-		game->match.p2.ent.pos.x = SCREEN_WIDTH - 2*PLAYER_RADIUS - 1;
-	} else if(game->match.p2.ent.pos.x <
-			SCREEN_WIDTH/2 + NET_WIDTH/2 + 1) {
-		game->match.p2.ent.pos.x = SCREEN_WIDTH/2 + NET_WIDTH/2 + 1;
-	}
-
-	/* Ball x bounds */
-	if(game->match.ball.pos.x <= 0) {
-		game->match.ball.pos.x = 0;
-		game->match.ball.vel.x *= -1;
-	} else if(game->match.ball.pos.x >= SCREEN_WIDTH - 2*BALL_RADIUS) {
-		game->match.ball.pos.x = SCREEN_WIDTH - 2*BALL_RADIUS;
-		game->match.ball.vel.x *= -1;
-	}
-
-	/* Player-ball collision */
-	pb_coll_handler(&game->match.p1, &game->match.ball);
-	pb_coll_handler(&game->match.p2, &game->match.ball);
-
-	/* Net collision */
-	if(aabbox_coll(&net_full, &game->match.ball)) {
-		if(game->match.ball.pos.y + 2 * BALL_RADIUS - NET_EPSILON >
-			net_full.pos.y) {
-			if(game->match.ball.vel.x > 0.) {
-			game->match.ball.pos.x = SCREEN_WIDTH/2
-				- NET_WIDTH/2 - 2*BALL_RADIUS;
-			} else {
-				game->match.ball.pos.x = SCREEN_WIDTH/2
-					+ NET_WIDTH/2;
-			}
-			game->match.ball.vel.x *= -1;
-		} else {
-			game->match.ball.vel.y *= -1;
-			game->match.ball.pos.y = PLAY_HEIGHT - NET_HEIGHT
-				- 2*BALL_RADIUS;
-		}
-	}
-
-	update_rect(&game->match.ball);
-	update_rect(&game->match.p1.ent);
-	update_rect(&game->match.p2.ent);
-}
-
-/* New match */
-void new_match(game_t *game) {
-	game->match.p1.ent.pos.x  = SCREEN_WIDTH/4 - PLAYER_RADIUS;
-	game->match.p1.ent.pos.y  = PLAY_HEIGHT - PLAYER_RADIUS;
-	game->match.p1.human = 1;
-	game->match.p1.ent.acc.x = 0;
-	game->match.p1.ent.vel.x = 0;
-	game->match.p1.ent.vel.y = 0;
-
-	game->match.p2.ent.pos.x  = 3*SCREEN_WIDTH/4 - PLAYER_RADIUS;
-	game->match.p2.ent.pos.y  = PLAY_HEIGHT - PLAYER_RADIUS;
-	game->match.p2.human = 1;
-	game->match.p2.ent.acc.x = 0;
-	game->match.p2.ent.vel.x = 0;
-	game->match.p2.ent.vel.y = 0;
-
-	if(game->winner == 1) {
-		game->match.ball.pos.x = SCREEN_WIDTH/4 - BALL_RADIUS;
+	if(volley->vel.y > 0 && volley->pos.y < NET_TOP_REBOUND_Y) {
+		volley->pos.y = NET_TOP_REBOUND_Y;
+		volley->vel.y = -volley->vel.y;
 	} else {
-		game->match.ball.pos.x = 3*SCREEN_WIDTH/4 - BALL_RADIUS;
+		float outward = offset_x < 0 ? -1.0f : 1.0f;
+		volley->pos.x = center + outward * NET_REACH_X;
+		volley->vel.x = outward * fabsf(volley->vel.x);
 	}
-
-	game->match.ball.pos.y = PLAY_HEIGHT/2;
-	game->match.ball.vel.x = 0;
-	game->match.ball.vel.y = 0;
-
-	game->winner = 0;
-
-	update_match(game);
 }
 
-/* New game */
-void new_game(game_t *game) {
-	game->winner = 1;
+static void bounce_off_walls(body_t *volley) {
+	const float right = SCREEN_WIDTH - BALL_WALL_INSET;
+	if(volley->pos.x < BALL_WALL_INSET || volley->pos.x > right) {
+		volley->pos.x = clamp(volley->pos.x, BALL_WALL_INSET, right);
+		volley->vel.x = -volley->vel.x;
+	}
+}
 
-	game->s1 = 0;
-	game->s2 = 0;
+static void advance_ball(body_t *volley) {
+	volley->vel.y += BALL_GRAVITY;
+	volley->pos.x += volley->vel.x;
+	volley->pos.y += volley->vel.y;
+}
 
-	game->match.ball.rect.w = BALL_RADIUS*2;
-	game->match.ball.rect.h = BALL_RADIUS*2;
-	game->match.ball.acc.y  = BALL_GRAVITY;
-	game->match.ball.acc.x  = 0;
+static float landing_x(body_t volley) {
+	const float intercept_y = PLAY_HEIGHT - SLIME_CONTACT_RADIUS;
+	for(int frame = 0; frame < 75; frame++) {
+		if(volley.pos.y >= intercept_y && volley.vel.y >= 0) {
+			break;
+		}
+		advance_ball(&volley);
+		bounce_off_walls(&volley);
+	}
+	return volley.pos.x;
+}
 
-	game->match.p1.ent.rect.w = 2*PLAYER_RADIUS;
-	game->match.p1.ent.rect.h = PLAYER_RADIUS;
-	game->match.p1.ent.acc.y  = PLAYER_GRAVITY;
+static controls_t bot_input(const game_t *state) {
+	const body_t *player = &state->players[1];
+	const body_t *volley = &state->ball;
+	float aim = 22.0f - 4.0f * state->bot_tier;
+	float target = SCREEN_WIDTH * 0.72f;
+	bool serving = state->phase == SERVE && state->server == 1;
+	if(serving) {
+		target = volley->pos.x + aim;
+	} else {
+		float intercept = landing_x(*volley);
+		if(intercept >= SCREEN_WIDTH / 2.0f) {
+			target = intercept + aim;
+		}
+	}
+	float error = target - player->pos.x;
+	float ball_dx = volley->pos.x - player->pos.x;
+	bool jump = (serving ? volley->vel.y > 4.0f : volley->vel.y > 0.5f)
+		&& volley->pos.y > 143.0f && volley->pos.y < 215.0f
+		&& ball_dx > -44.0f && ball_dx < 7.0f;
+	return (controls_t){fabsf(error) <= 3.0f ? 0 : error > 0 ? 1 : -1, jump};
+}
 
-	game->match.p2.ent.rect.w = 2*PLAYER_RADIUS;
-	game->match.p2.ent.rect.h = PLAYER_RADIUS;
-	game->match.p2.ent.acc.y  = PLAYER_GRAVITY;
+static positions_t positions(const game_t *state) {
+	return (positions_t){{state->players[0].pos, state->players[1].pos}, state->ball.pos};
+}
 
-	new_match(game);
+static void record_frame(game_t *state) {
+	state->history[state->history_next] = positions(state);
+	state->history_next = (state->history_next + 1) % REPLAY_FRAMES;
+	if(state->history_count < REPLAY_FRAMES) {
+		state->history_count++;
+	}
+}
+
+static void reset_rally(game_t *state) {
+	state->players[0] = (body_t){.pos = {PLAYER_START_X, PLAY_HEIGHT}};
+	state->players[1] = (body_t){.pos = {SCREEN_WIDTH - PLAYER_START_X, PLAY_HEIGHT}};
+	state->ball = (body_t){.pos = {state->players[state->server].pos.x,
+		PLAY_HEIGHT - BALL_START_HEIGHT}};
+	state->phase = SERVE;
+	state->history_next = 0;
+	state->history_count = 0;
+	record_frame(state);
+}
+
+static void reset_match(game_t *state) {
+	state->score[0] = state->score[1] = 0;
+	state->server = 0;
+	state->paused = false;
+	reset_rally(state);
+}
+
+static bool match_over(const game_t *state) {
+	return state->score[state->server] >= MAX_SCORE;
+}
+
+static void finish_point(game_t *state) {
+	if(match_over(state)) {
+		if(state->solo && state->server == 0 && state->bot_tier + 1 < BOT_TIERS) {
+			state->bot_tier++;
+		}
+		reset_match(state);
+	} else {
+		reset_rally(state);
+	}
+}
+
+static void press_replay(game_t *state, double now) {
+	if(state->paused) {
+		return;
+	}
+	if(state->phase == REPLAY) {
+		finish_point(state);
+	} else if(state->phase == POINT_BREAK && now < state->point_deadline) {
+		state->phase = REPLAY;
+		state->replay_index = -1;
+	}
+}
+
+static void toggle_pause(game_t *state, double now) {
+	state->paused = !state->paused;
+	if(state->paused) {
+		state->paused_at = now;
+	} else if(state->phase == POINT_BREAK) {
+		state->point_deadline += now - state->paused_at;
+	}
+}
+
+static void step_game(game_t *state, double now) {
+	if(state->paused) {
+		return;
+	}
+	if(state->phase == REPLAY) {
+		if(++state->replay_index == state->history_count) {
+			finish_point(state);
+		}
+		return;
+	}
+	if(state->phase == POINT_BREAK) {
+		if(now >= state->point_deadline) {
+			finish_point(state);
+		}
+		return;
+	}
+
+	if(state->solo) {
+		controls_t right = bot_input(state);
+		state->players[1].vel.x = right.direction * PLAYER_SPEED;
+		if(right.jump) {
+			jump_player(&state->players[1]);
+		}
+	}
+	move_player(&state->players[0], 0);
+	move_player(&state->players[1], 1);
+
+	body_t *volley = &state->ball;
+	advance_ball(volley);
+	bool left_contact = collide_with_player(volley, &state->players[0]);
+	bool right_contact = collide_with_player(volley, &state->players[1]);
+	if(state->phase == SERVE && (left_contact || right_contact)) {
+		state->phase = RALLY;
+	}
+	bounce_off_walls(volley);
+	collide_with_net(volley);
+
+	if(volley->pos.y > BALL_GROUND_Y) {
+		state->server = volley->pos.x > SCREEN_WIDTH / 2.0f ? 0 : 1;
+		state->score[state->server]++;
+		state->phase = POINT_BREAK;
+		state->point_deadline = now + POINT_DELAY;
+	}
+	record_frame(state);
 }
 
 static Uint32 map_color(SDL_Surface *surface, Uint32 rgba) {
@@ -407,21 +388,29 @@ static SDL_Surface *create_circle_sprite(int radius, int height, Uint32 color) {
 	return sprite;
 }
 
-static SDL_Surface *create_slime(Uint32 color, bool left) {
-	SDL_Surface *slime = create_circle_sprite(PLAYER_RADIUS, PLAYER_RADIUS, color);
-	if(slime) {
-		fill_circle(slime, left ? 2 * PLAYER_RADIUS - PLAYER_EYE_X : PLAYER_EYE_X,
-				PLAYER_EYE_Y, PLAYER_EYE_RADIUS, 0xFFFFFFFF);
-		fill_circle(slime, left ? 2 * PLAYER_RADIUS - PLAYER_PUP_X : PLAYER_PUP_X,
-				PLAYER_PUP_Y, PLAYER_PUP_RADIUS, 0x000000FF);
+static void draw_slime(SDL_Rect rect, SDL_Surface *sprite, bool left, vec_t ball_pos) {
+	int x = rect.x + (left ? 2 * PLAYER_DRAW_RADIUS - PLAYER_EYE_X : PLAYER_EYE_X);
+	int y = rect.y + PLAYER_EYE_Y;
+	SDL_BlitSurface(sprite, NULL, screen, &rect);
+
+	float dx = ball_pos.x - x;
+	float dy = ball_pos.y - y;
+	float distance = hypotf(dx, dy);
+	int pupil_x = x;
+	int pupil_y = y;
+	if(distance > 0) {
+		const int travel = PLAYER_EYE_RADIUS - PLAYER_PUP_RADIUS;
+		pupil_x += (int)(travel * dx / distance);
+		pupil_y += (int)(travel * dy / distance);
 	}
-	return slime;
+	fill_circle(screen, x, y, PLAYER_EYE_RADIUS, 0xFFFFFFFF);
+	fill_circle(screen, pupil_x, pupil_y, PLAYER_PUP_RADIUS, 0x000000FF);
 }
 
 static void draw_score(SDL_Surface *surface, const game_t *state, bool left) {
 	int x0 = left ? POINT_PADDING : SCREEN_WIDTH - POINT_PADDING;
 	int dx = left ? POINT_PADDING : -POINT_PADDING;
-	int score = left ? state->s1 : state->s2;
+	int score = state->score[left ? 0 : 1];
 	Uint32 color = left ? PLAYER1_COLOR : PLAYER2_COLOR;
 	for(int i = 0; i < MAX_SCORE; i++) {
 		int x = x0 + i * dx;
@@ -440,19 +429,87 @@ static void free_resources(void) {
 	SDL_Quit();
 }
 
-static void update_input(player_t *player, const Uint8 *keys,
-		SDL_Keycode left, SDL_Keycode right, SDL_Keycode jump) {
-	player->ent.acc.x = 0;
-	if(keys[SDL_GetScancodeFromKey(left)]) {
-		player->ent.acc.x = -PLAYER_MOVE_ACC;
-	} else if(keys[SDL_GetScancodeFromKey(right)]) {
-		player->ent.acc.x = PLAYER_MOVE_ACC;
+static bool player_key(game_t *state, SDL_Keycode key, bool pressed) {
+	int side;
+	int direction;
+	switch(key) {
+		case SDLK_LEFT:  side = 0; direction = -1; break;
+		case SDLK_RIGHT: side = 0; direction =  1; break;
+		case SDLK_UP:    side = 0; direction =  0; break;
+		case SDLK_a:     side = 1; direction = -1; break;
+		case SDLK_d:     side = 1; direction =  1; break;
+		case SDLK_w:     side = 1; direction =  0; break;
+		default: return false;
+	}
+	if(side == 1 && state->solo) {
+		return true;
 	}
 
-	if(keys[SDL_GetScancodeFromKey(jump)] &&
-			player->ent.pos.y > PLAY_HEIGHT - PLAYER_RADIUS - EPSILON) {
-		player->ent.vel.y = -PLAYER_JUMP_VEL;
+	body_t *player = &state->players[side];
+	if(pressed && direction == 0) {
+		jump_player(player);
+	} else if(pressed) {
+		player->vel.x = direction * PLAYER_SPEED;
+	} else if(direction * player->vel.x > 0) {
+		player->vel.x = 0;
 	}
+	return true;
+}
+
+static void draw_label(const char *label, int y, Uint32 rgba) {
+	// Five pixels across per character, with one column of spacing.
+	static const Uint8 letters[26][7] = {
+		['A' - 'A'] = {14, 17, 17, 31, 17, 17, 17},
+		['C' - 'A'] = {14, 17, 16, 16, 16, 17, 14},
+		['D' - 'A'] = {30, 17, 17, 17, 17, 17, 30},
+		['E' - 'A'] = {31, 16, 16, 30, 16, 16, 31},
+		['H' - 'A'] = {17, 17, 17, 31, 17, 17, 17},
+		['I' - 'A'] = {14, 4, 4, 4, 4, 4, 14},
+		['L' - 'A'] = {16, 16, 16, 16, 16, 16, 31},
+		['M' - 'A'] = {17, 27, 21, 21, 17, 17, 17},
+		['N' - 'A'] = {17, 25, 21, 19, 17, 17, 17},
+		['O' - 'A'] = {14, 17, 17, 17, 17, 17, 14},
+		['P' - 'A'] = {30, 17, 17, 30, 16, 16, 16},
+		['R' - 'A'] = {30, 17, 17, 30, 20, 18, 17},
+		['S' - 'A'] = {15, 16, 16, 14, 1, 1, 30},
+		['T' - 'A'] = {31, 4, 4, 4, 4, 4, 4},
+		['U' - 'A'] = {17, 17, 17, 17, 17, 17, 14},
+		['V' - 'A'] = {17, 17, 17, 17, 17, 10, 4},
+		['W' - 'A'] = {17, 17, 17, 21, 21, 27, 17},
+		['Y' - 'A'] = {17, 17, 10, 4, 4, 4, 4},
+	};
+	static const Uint8 digits[BOT_TIERS][7] = {
+		{4, 12, 4, 4, 4, 4, 14},
+		{14, 17, 1, 2, 4, 8, 31},
+		{30, 1, 1, 14, 1, 1, 30},
+	};
+	const int scale = 2;
+	int x = (SCREEN_WIDTH - ((int)SDL_strlen(label) * 6 - 1) * scale) / 2;
+	Uint32 color = map_color(screen, rgba);
+	for(; *label; label++, x += 6 * scale) {
+		if(*label == ' ') {
+			continue;
+		}
+		const Uint8 *rows = *label >= '1' && *label <= '3'
+			? digits[*label - '1'] : letters[*label - 'A'];
+		for(int row = 0; row < 7; row++) {
+			for(int col = 0; col < 5; col++) {
+				if(rows[row] & (16 >> col)) {
+					SDL_Rect pixel = {x + col * scale, y + row * scale, scale, scale};
+					SDL_FillRect(screen, &pixel, color);
+				}
+			}
+		}
+	}
+}
+
+static positions_t display_positions(const game_t *state) {
+	if(state->phase != REPLAY) {
+		return positions(state);
+	}
+	int oldest = (state->history_next + REPLAY_FRAMES - state->history_count) % REPLAY_FRAMES;
+	int index = state->replay_index < 0 ? 0 : state->replay_index;
+	return state->history[(oldest + index) % REPLAY_FRAMES];
 }
 
 static bool draw_frame(void) {
@@ -462,13 +519,35 @@ static bool draw_frame(void) {
 	draw_score(screen, &game, true);
 	draw_score(screen, &game, false);
 
-	// SDL_BlitSurface can clip its destination rectangle.
-	SDL_Rect p1 = game.match.p1.ent.rect;
-	SDL_Rect p2 = game.match.p2.ent.rect;
-	SDL_Rect ball_rect = game.match.ball.rect;
-	SDL_BlitSurface(slime1, NULL, screen, &p1);
-	SDL_BlitSurface(slime2, NULL, screen, &p2);
+	positions_t display = display_positions(&game);
+	SDL_Rect p1 = {(int)roundf(display.players[0].x) - PLAYER_DRAW_RADIUS,
+		(int)roundf(display.players[0].y) - PLAYER_DRAW_RADIUS, 0, 0};
+	SDL_Rect p2 = {(int)roundf(display.players[1].x) - PLAYER_DRAW_RADIUS,
+		(int)roundf(display.players[1].y) - PLAYER_DRAW_RADIUS, 0, 0};
+	SDL_Rect ball_rect = {(int)roundf(display.ball.x) - BALL_DRAW_RADIUS,
+		(int)roundf(display.ball.y) - BALL_DRAW_RADIUS, 0, 0};
+	draw_slime(p1, slime1, true, display.ball);
+	draw_slime(p2, slime2, false, display.ball);
 	SDL_BlitSurface(ball, NULL, screen, &ball_rect);
+
+	char solo_label[] = "SOLO 1";
+	solo_label[5] += game.bot_tier;
+	draw_label(game.solo ? solo_label : "DUO", 28, NET_COLOR);
+
+	const char *status = NULL;
+	Uint32 status_color = NET_COLOR;
+	if(game.paused) {
+		status = "PAUSED";
+	} else if(game.phase == REPLAY) {
+		status = "REPLAY";
+	} else if(game.phase == POINT_BREAK || game.phase == SERVE) {
+		status = game.phase == SERVE ? "SERVE" : match_over(&game) ? "MATCH WIN" : "POINT";
+		status_color = game.server == 0 ? PLAYER1_COLOR : PLAYER2_COLOR;
+	}
+	if(status) {
+		draw_label(status, PLAY_HEIGHT + 30, status_color);
+	}
+
 	return SDL_UpdateWindowSurface(window) == 0;
 }
 
@@ -477,41 +556,47 @@ static double frame_time(void) {
 }
 
 static bool game_frame(void) {
+	double now = frame_time();
 	SDL_Event event;
 	while(SDL_PollEvent(&event)) {
 		if(event.type == SDL_QUIT) {
 			return false;
 		}
+		if(event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+			game.players[0].vel.x = game.players[1].vel.x = 0;
+		}
+		if(event.type != SDL_KEYDOWN && event.type != SDL_KEYUP) {
+			continue;
+		}
+		bool pressed = event.type == SDL_KEYDOWN;
+		if(player_key(&game, event.key.keysym.sym, pressed) || !pressed || event.key.repeat) {
+			continue;
+		}
+		switch(event.key.keysym.sym) {
+			case SDLK_1:
+			case SDLK_2:
+				game.solo = event.key.keysym.sym == SDLK_1;
+				game.bot_tier = 0;
+				reset_match(&game);
+				break;
+			case SDLK_r:
+				reset_match(&game);
+				break;
+			case SDLK_p:
+				toggle_pause(&game, now);
+				break;
+			case SDLK_SPACE:
+				press_replay(&game, now);
+				break;
+		}
 	}
 
-	double now = frame_time();
 	if(now < next_frame) {
 		return true;
 	}
-	next_frame += FRAME_INTERVAL;
-	// Drop the backlog after the window or browser tab has been suspended.
-	if(next_frame <= now) {
-		next_frame = now + FRAME_INTERVAL;
-	}
-
-	if(game.winner) {
-		if(now < next_point) {
-			return true;
-		}
-		if(game.s1 >= MAX_SCORE || game.s2 >= MAX_SCORE) {
-			new_game(&game);
-		} else {
-			new_match(&game);
-		}
-	}
-
-	const Uint8 *keys = SDL_GetKeyboardState(NULL);
-	update_input(&game.match.p1, keys, SDLK_a, SDLK_d, SDLK_w);
-	update_input(&game.match.p2, keys, SDLK_LEFT, SDLK_RIGHT, SDLK_UP);
-	update_match(&game);
-	if(game.winner) {
-		next_point = now + POINT_DELAY / 1000.0;
-	}
+	// Each accepted frame schedules one step, even after a long gap.
+	next_frame = now + FRAME_INTERVAL;
+	step_game(&game, now);
 
 	if(!draw_frame()) {
 		fprintf(stderr, "Could not present the game: %s\n", SDL_GetError());
@@ -550,9 +635,9 @@ int main(void) {
 		return EXIT_FAILURE;
 	}
 
-	slime1 = create_slime(PLAYER1_COLOR, true);
-	slime2 = create_slime(PLAYER2_COLOR, false);
-	ball = create_circle_sprite(BALL_RADIUS, 2 * BALL_RADIUS + 1, BALL_COLOR);
+	slime1 = create_circle_sprite(PLAYER_DRAW_RADIUS, PLAYER_DRAW_RADIUS, PLAYER1_COLOR);
+	slime2 = create_circle_sprite(PLAYER_DRAW_RADIUS, PLAYER_DRAW_RADIUS, PLAYER2_COLOR);
+	ball = create_circle_sprite(BALL_DRAW_RADIUS, 2 * BALL_DRAW_RADIUS + 1, BALL_COLOR);
 	if(!slime1 || !slime2 || !ball) {
 		fprintf(stderr, "Could not create the sprites: %s\n", SDL_GetError());
 		free_resources();
@@ -560,13 +645,11 @@ int main(void) {
 	}
 
 	ground = (SDL_Rect){0, PLAY_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - PLAY_HEIGHT};
+	int net_top = (int)roundf(0.7f * SCREEN_HEIGHT);
 	net = (SDL_Rect){SCREEN_WIDTH / 2 - NET_WIDTH / 2,
-			PLAY_HEIGHT - NET_HEIGHT, NET_WIDTH, NET_HEIGHT + NET_PADDING};
-	net_full.pos = (vect_t){net.x, net.y};
-	net_full.rect.w = NET_WIDTH;
-	net_full.rect.h = NET_HEIGHT;
+			net_top, NET_WIDTH, PLAY_HEIGHT - net_top + NET_PADDING};
 
-	new_game(&game);
+	reset_match(&game);
 	clock_frequency = (double)SDL_GetPerformanceFrequency();
 	next_frame = frame_time();
 

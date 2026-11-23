@@ -1,7 +1,16 @@
 # Slime Volleyball
 
-A local two-player volleyball game in C and SDL2. Player 1 moves with **A/D**
-and jumps with **W**. Player 2 uses **Left/Right** and **Up**.
+A volleyball game in C and SDL2 that starts in solo mode. Win a rally
+by landing the ball on the other side. The rally winner serves next, and the first
+player to six points wins the match. The ball drops automatically over the server.
+
+| Input | Action |
+| --- | --- |
+| **Left / Right**, **Up** | Move and jump as player 1 on the left |
+| **A / D**, **W** | Move and jump as player 2 on the right in local play |
+| **1** / **2** | Start a solo or local match. Winning solo matches raises the CPU through three difficulty tiers. |
+| **Space** | Replay up to the last four seconds of a rally during the point break, or skip playback |
+| **P** / **R** | Pause or resume, or restart the current match |
 
 ![Slime Volleyball screenshot](https://raw.githubusercontent.com/parsiad/slime-vball/gh-pages/slime-vball.png)
 

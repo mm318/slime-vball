@@ -11,11 +11,13 @@
 </head>
 <body>
   <canvas id="canvas" width="750" height="375" tabindex="0" aria-label="Slime Volleyball court"></canvas>
-  <p>Player 1: A/D to move, W to jump. Player 2: Left/Right to move, Up to jump.</p>
+  <p><kbd>1</kbd> Solo · <kbd>2</kbd> Local · <kbd>P</kbd> Pause · <kbd>R</kbd> Restart · <kbd>Space</kbd> Replay after a point</p>
+  <p>Solo mode starts automatically. Player 1 uses Left/Right and Up. In local play, player 2 uses A/D and W.</p>
+  <p>The ball drops automatically over the server. The first player to six points wins.</p>
   <script>
     const canvas = document.getElementById("canvas");
     canvas.addEventListener("click", () => canvas.focus());
-    const gameKeys = ["a", "d", "w", "arrowleft", "arrowright", "arrowup"];
+    const gameKeys = ["a", "d", "w", "arrowleft", "arrowright", "arrowup", "1", "2", "p", "r", " "];
     canvas.addEventListener("keydown", (event) => {
       if (gameKeys.includes(event.key.toLowerCase())) {
         event.preventDefault();
