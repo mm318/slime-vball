@@ -79,7 +79,8 @@ The source is organized as follows:
 
 Shared types and interfaces live in `src/game.h`, `src/app.h`, and `src/ui.h`.
 The build translates `src/bridge.h` to Zig bindings, so the C headers define the
-shared ABI. The UI checks retain a C test body and enter through `tests/ui.zig`,
-exercising the Zig modules through the same interface used by `main.c`.
+shared ABI. The UI checks are implemented in `tests/ui.zig`, exercising the
+modules through the same interface used by `main.c`. The checks also retain
+optional BMP screenshot output.
 
 See [COPYING](COPYING) for the license.

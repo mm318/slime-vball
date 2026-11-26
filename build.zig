@@ -81,12 +81,12 @@ pub fn build(b: *Build) void {
             .link_libc = true,
         });
         checks.addImport("game_modules", logic);
+        checks.addImport("c", c_api);
         checks.addIncludePath(sdl_lib.getEmittedIncludeTree().path(b, "SDL2"));
         checks.addCMacro("SDL_MAIN_HANDLED", "1");
         checks.linkLibrary(sdl_lib);
         if (target.result.os.tag == .linux) checks.linkSystemLibrary("m", .{});
         checks.addCSourceFile(.{ .file = b.path("src/main.c"), .flags = &c_flags });
-        checks.addCSourceFile(.{ .file = b.path("tests/ui.c"), .flags = &c_flags });
         const ui_test = b.addExecutable(.{ .name = "slime-ui-test", .root_module = checks });
         const test_run = b.addRunArtifact(ui_test);
         const test_step = b.step("test", "Check UI, gameplay, and reference AI behavior");
