@@ -15,10 +15,10 @@ player to six points wins the match. The ball drops automatically over the serve
 | **Mouse click** | Choose a mode, or continue from the match result |
 | **C** | Continue the current solo stage from the menu |
 
-The five stages reproduce the original court, ball, and opponent colors, with
+The three stages reproduce the original court, ball, and opponent colors, with
 rally commentary, score and time, level bonuses, and victory and loss screens.
-The existing bitmap font and floating point physics are retained. Stages four
-and five reuse the strongest existing CPU controller.
+The existing bitmap font keeps its original width and height, with newlines
+for long prompts. The floating point physics are retained.
 
 ## Desktop
 
@@ -39,6 +39,8 @@ zig build test
 
 The executable is `zig-out/bin/slime-vball` (`.exe` on Windows). For a release
 build, add `-Doptimize=fast`.
+Desktop and browser builds display the court at 1.5× scale: 1125 × 563 pixels
+(height rounded to the nearest whole pixel).
 
 ## Browser
 

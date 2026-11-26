@@ -15,6 +15,8 @@ static const double POINT_DELAY = 1.5;
 enum {
 	SCREEN_WIDTH = 750,
 	SCREEN_HEIGHT = 375,
+	WINDOW_WIDTH = (SCREEN_WIDTH * 3 + 1) / 2,
+	WINDOW_HEIGHT = (SCREEN_HEIGHT * 3 + 1) / 2,
 	COURT_UNITS = 1000,
 	PLAY_HEIGHT = 300,
 	NET_WIDTH = 4,
@@ -28,8 +30,14 @@ enum {
 	MAX_SCORE = 6,
 	POINT_PADDING = 35,
 	POINT_RADIUS = 12,
+	POINT_CENTER_Y = 30,
 	REPLAY_FRAMES = 240,
-	BOT_TIERS = 5,
+	BOT_TIERS = 3,
+	TEXT_CELL_WIDTH = 12,
+	TEXT_HEIGHT = 14,
+	TEXT_LINE_HEIGHT = 20,
+	HUD_WIDTH = 280,
+	HUD_SCORE_BASELINE = POINT_CENTER_Y - (TEXT_LINE_HEIGHT - TEXT_HEIGHT) / 2,
 };
 
 static const Uint32 NET_COLOR = 0xFFFFFFFF;
@@ -40,19 +48,15 @@ static const palette_t palettes[BOT_TIERS] = {
 	{0x0000FFFF, 0x808080FF, 0xFFFF00FF, 0xFFFFFFFF},
 	{0x1E5000FF, 0xA9A9A9FF, 0x8080FFFF, 0xFF0000FF},
 	{0x623939FF, 0x00A800FF, 0xFFFFFFFF, 0x000000FF},
-	{0x000000FF, 0xFF0000FF, 0xFFFF00FF, 0x0000FFFF},
-	{0x000000FF, 0xFF0000FF, 0xFFFF00FF, 0x0000FFFF},
 };
 static const char *const names[] = {
 	"Inferior Human Controlled Slime ", "The Pathetic White Slime ",
-	"Angry Red Slimons ", "The Slime Master ", "Psycho Slime ", "The Big Blue Boss ",
+	"Angry Red Slimons ", "The Slime Master ",
 };
 static const char *const loss_lines[BOT_TIERS][2] = {
 	{"You are a loser!", "Better luck next time."},
 	{"Angry Red Slimons gives you the gong!", "So who has the red face bombing out on level 2, huh?"},
 	{"The Slime Master says \"You are seriously inept.\"", "Congrats on reaching level 3."},
-	{"Psycho Slime laughs at the pathetic slow opposition.", "Congrats on reaching level 4!"},
-	{"The Big Blue Boss devours you!", "Yum."},
 };
 
 // The reference game uses upward-positive court units. These values convert
@@ -242,8 +246,7 @@ static float landing_x(body_t volley) {
 static controls_t bot_input(const game_t *state) {
 	const body_t *player = &state->players[1];
 	const body_t *volley = &state->ball;
-	// Later stage palettes reuse the strongest existing controller.
-	float aim = 22.0f - 4.0f * (state->bot_tier < 3 ? state->bot_tier : 2);
+	float aim = 22.0f - 4.0f * state->bot_tier;
 	float target = SCREEN_WIDTH * 0.72f;
 	bool serving = state->phase == SERVE && state->server == 1;
 	if(serving) {
@@ -384,12 +387,14 @@ static void point_message(game_t *state) {
 			? "laughs at his opponent's inability to serve!"
 		: state->score[0] == state->score[1] ? "draws level!"
 		: state->score[winner] == state->score[loser] + 1 ? "takes the lead!" : "scores!";
-	if(state->solo) {
-		snprintf(state->message, sizeof(state->message), "%s%s",
-			names[winner == 0 ? 0 : state->bot_tier + 1], ending);
-	} else {
-		snprintf(state->message, sizeof(state->message), "%s%d %s", names[0], winner + 1, ending);
-	}
+	char subject[96];
+	if(state->solo) snprintf(subject, sizeof(subject), "%s", names[winner == 0 ? 0 : state->bot_tier + 1]);
+	else snprintf(subject, sizeof(subject), "%s%d ", names[0], winner + 1);
+	// Long commentary keeps the name and the action on separate lines.
+	size_t length = SDL_strlen(subject);
+	subject[--length] = '\0'; // Each subject ends with one separating space.
+	bool wrap = (length + 1 + SDL_strlen(ending)) * TEXT_CELL_WIDTH - 2 > SCREEN_WIDTH - 30;
+	snprintf(state->message, sizeof(state->message), "%s%s%s", subject, wrap ? "\n" : " ", ending);
 }
 
 static void press_replay(game_t *state, double now) {
@@ -520,7 +525,6 @@ static SDL_Surface *create_circle_sprite(int radius, int height, Uint32 color) {
 
 static void draw_slime(SDL_Rect rect, SDL_Surface *sprite, bool left, vec_t ball_pos) {
 	Uint32 color = left || !game.solo ? 0xFFFF00FF : palette(&game)->opponent;
-	if(!left && game.solo && game.bot_tier == 3 && ((int)(game.elapsed / FRAME_INTERVAL) & 1)) color = NET_COLOR;
 	SDL_SetSurfaceColorMod(sprite, color >> 24, (color >> 16) & 0xff, (color >> 8) & 0xff);
 	int x = rect.x + (left ? 2 * PLAYER_DRAW_RADIUS - PLAYER_EYE_X : PLAYER_EYE_X);
 	int y = rect.y + PLAYER_EYE_Y;
@@ -548,9 +552,9 @@ static void draw_score(SDL_Surface *surface, const game_t *state, bool left) {
 	for(int i = 0; i < MAX_SCORE; i++) {
 		int x = x0 + i * dx;
 		if(i < score) {
-			fill_circle(surface, x, 30, POINT_RADIUS, color);
+			fill_circle(surface, x, POINT_CENTER_Y, POINT_RADIUS, color);
 		}
-		outline_circle(surface, x, 30, POINT_RADIUS);
+		outline_circle(surface, x, POINT_CENTER_Y, POINT_RADIUS);
 	}
 }
 
@@ -558,6 +562,7 @@ static void free_resources(void) {
 	SDL_FreeSurface(slime1);
 	SDL_FreeSurface(slime2);
 	SDL_FreeSurface(ball);
+	SDL_FreeSurface(screen);
 	SDL_DestroyWindow(window);
 	SDL_Quit();
 }
@@ -669,28 +674,65 @@ static const Uint8 glyphs[95][7] = {
 	[')' - ' '] = {8,4,2,2,2,4,8},
 };
 
-static void draw_text(const char *text, int center, int baseline, int max_width, Uint32 rgba) {
-	int length = (int)SDL_strlen(text);
-	if(length == 0) return;
-	// Keep the existing 2x font height; fit long reference prompts to the court.
-	float cell = fminf(12, (float)max_width / length);
-	float x = center - length * cell / 2;
+typedef struct {
+	size_t length;
+	const char *next;
+} text_line_t;
+
+static text_line_t text_line(const char *text, int max_width) {
+	size_t capacity = max_width >= TEXT_CELL_WIDTH - 2 ? (max_width + 2) / TEXT_CELL_WIDTH : 1;
+	size_t length = 0, last_space = 0;
+	while(text[length] && text[length] != '\n' && length < capacity) {
+		if(text[length] == ' ') last_space = length;
+		length++;
+	}
+	if(length == capacity && text[length] && text[length] != '\n'
+			&& text[length] != ' ' && last_space > 0) length = last_space;
+	const char *next = text + length;
+	while(*next == ' ') next++;
+	if(*next == '\n') next++;
+	while(length > 0 && text[length - 1] == ' ') length--;
+	return (text_line_t){length, next};
+}
+
+static int text_width(const char *text) {
+	int width = 0, length = 0;
+	for(;; text++) {
+		if(*text == '\n' || *text == '\0') {
+			int line_width = length > 0 ? length * TEXT_CELL_WIDTH - 2 : 0;
+			if(line_width > width) width = line_width;
+			length = 0;
+			if(!*text) return width;
+		} else length++;
+	}
+}
+
+static int draw_text(const char *text, int center, int baseline, int max_width, Uint32 rgba) {
 	Uint32 color = map_color(screen, rgba);
-	for(; *text; text++, x += cell) {
-		unsigned char code = (unsigned char)*text;
-		if(code < 32 || code > 126) code = '?';
-		const Uint8 *rows = glyphs[code - 32];
-		for(int row = 0; row < 7; row++) {
-			for(int col = 0; col < 5; col++) {
-				if(rows[row] & (16 >> col)) {
-					int left = (int)(x + col * cell / 6);
-					int right = (int)(x + (col + 1) * cell / 6);
-					SDL_Rect pixel = {left, baseline - 14 + row * 2, right - left, 2};
-					SDL_FillRect(screen, &pixel, color);
+	int lines = 0;
+	while(*text) {
+		text_line_t line = text_line(text, max_width);
+		int width = line.length > 0 ? (int)line.length * TEXT_CELL_WIDTH - 2 : 0;
+		int x = center - width / 2;
+		for(size_t i = 0; i < line.length; i++, x += TEXT_CELL_WIDTH) {
+			unsigned char code = (unsigned char)text[i];
+			if(code < 32 || code > 126) code = '?';
+			const Uint8 *rows = glyphs[code - 32];
+			for(int row = 0; row < 7; row++) {
+				for(int col = 0; col < 5; col++) {
+					if(rows[row] & (16 >> col)) {
+						// Always render the original 2x2 pixels on both axes.
+						SDL_Rect pixel = {x + col * 2, baseline - TEXT_HEIGHT + row * 2, 2, 2};
+						SDL_FillRect(screen, &pixel, color);
+					}
 				}
 			}
 		}
+		lines++;
+		baseline += TEXT_LINE_HEIGHT;
+		text = line.next;
 	}
+	return lines;
 }
 
 static void centered_text(const char *text, int baseline) {
@@ -698,7 +740,7 @@ static void centered_text(const char *text, int baseline) {
 }
 
 static SDL_Rect menu_button(bool solo) {
-	return (SDL_Rect){solo ? 10 : SCREEN_WIDTH / 2 + 10, 210, SCREEN_WIDTH / 2 - 20, 57};
+	return (SDL_Rect){solo ? 10 : SCREEN_WIDTH / 2 + 10, 210, SCREEN_WIDTH / 2 - 20, 74};
 }
 
 static void draw_menu(void) {
@@ -708,12 +750,13 @@ static void draw_menu(void) {
 	for(int side = 0; side < 2; side++) {
 		SDL_Rect rect = menu_button(side == 0);
 		SDL_FillRect(screen, &rect, map_color(screen, NET_COLOR));
-		draw_text(side == 0 ? "Click here to start a one player game!"
-			: "Click here to start a two player game!", rect.x + rect.w / 2,
-			game.bot_tier > 0 && side == 0 ? 234 : 248, rect.w - 16, palette(&game)->sky);
-		if(game.bot_tier > 0 && side == 0) {
-			draw_text("or press C to continue...", rect.x + rect.w / 2, 257, rect.w - 16, palette(&game)->sky);
-		}
+		bool continuing = game.bot_tier > 0 && side == 0;
+		char label[128];
+		snprintf(label, sizeof(label), "Click here to start a\n%s player game!%s",
+			side == 0 ? "one" : "two", continuing ? "\nor press C to continue..." : "");
+		int height = TEXT_HEIGHT + (continuing ? 2 : 1) * TEXT_LINE_HEIGHT;
+		int baseline = rect.y + (rect.h - height) / 2 + TEXT_HEIGHT;
+		draw_text(label, rect.x + rect.w / 2, baseline, rect.w - 16, palette(&game)->sky);
 	}
 }
 
@@ -755,11 +798,17 @@ static void draw_hud(void) {
 	if(seconds >= 3600) snprintf(time, sizeof(time), "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60);
 	else snprintf(time, sizeof(time), "%d:%02d", seconds / 60, seconds % 60);
 	bool running = game.phase != TITLE && game.phase != RESULT;
-	if(game.solo) snprintf(text, sizeof(text), running ? "Score: %d   Time: %s" : "Score: %d", game.campaign_score, time);
-	else snprintf(text, sizeof(text), running ? "   Time: %s" : "", time);
-	SDL_Rect backing = {(SCREEN_WIDTH - (int)SDL_strlen(text) * 8 - 20) / 2, 0, (int)SDL_strlen(text) * 8 + 20, 42};
+	if(game.solo) {
+		if(running) {
+			snprintf(text, sizeof(text), "Score: %d\nTime: %s", game.campaign_score, time);
+		} else snprintf(text, sizeof(text), "Score: %d", game.campaign_score);
+	} else snprintf(text, sizeof(text), running ? "Time: %s" : "", time);
+	int width = text_width(text);
+	SDL_Rect backing = {(SCREEN_WIDTH - width - 20) / 2, 0, width + 20,
+		HUD_SCORE_BASELINE + TEXT_LINE_HEIGHT + 4};
 	SDL_FillRect(screen, &backing, map_color(screen, palette(&game)->sky));
-	draw_text(text, SCREEN_WIDTH / 2, 38, backing.w - 20, NET_COLOR);
+	int baseline = game.solo ? HUD_SCORE_BASELINE : HUD_SCORE_BASELINE + TEXT_LINE_HEIGHT;
+	draw_text(text, SCREEN_WIDTH / 2, baseline, HUD_WIDTH, NET_COLOR);
 	const char *message = game.paused ? "Press P to continue . . ."
 		: game.phase == REPLAY ? "Press space to continue..." : game.message;
 	if(game.phase != RESULT) centered_text(message, 329);
@@ -804,6 +853,8 @@ static void render_game(void) {
 
 static bool draw_frame(void) {
 	render_game();
+	SDL_Surface *output = SDL_GetWindowSurface(window);
+	if(!output || SDL_BlitScaled(screen, NULL, output, NULL) != 0) return false;
 	return SDL_UpdateWindowSurface(window) == 0;
 }
 
@@ -818,7 +869,10 @@ static bool handle_event(SDL_Event event, double now) {
 	if(event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
 		if(game.phase == RESULT) continue_result(&game);
 		else if(game.phase == TITLE) {
-			SDL_Point point = {event.button.x, event.button.y};
+			int width = SCREEN_WIDTH, height = SCREEN_HEIGHT;
+			if(window) SDL_GetWindowSize(window, &width, &height);
+			SDL_Point point = {event.button.x * SCREEN_WIDTH / width,
+				event.button.y * SCREEN_HEIGHT / height};
 			SDL_Rect solo = menu_button(true), local = menu_button(false);
 			if(SDL_PointInRect(&point, &solo)) start_match(&game, true);
 			else if(SDL_PointInRect(&point, &local)) start_match(&game, false);
@@ -906,8 +960,10 @@ int main(void) {
 
 	window = SDL_CreateWindow("Slime Volleyball: One Slime",
 			SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-			SCREEN_WIDTH, SCREEN_HEIGHT, 0);
-	if(!window || !(screen = SDL_GetWindowSurface(window))) {
+			WINDOW_WIDTH, WINDOW_HEIGHT, 0);
+	// Keep simulation and UI coordinates at 750x375; scale only presentation.
+	screen = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_RGBA32);
+	if(!window || !screen || !SDL_GetWindowSurface(window)) {
 		fprintf(stderr, "Could not create the window: %s\n", SDL_GetError());
 		free_resources();
 		return EXIT_FAILURE;

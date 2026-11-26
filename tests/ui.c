@@ -17,6 +17,13 @@ static Uint32 pixel(int x, int y) {
 }
 
 int main(int argc, char **argv) {
+	assert(BOT_TIERS == 3);
+	assert(text_width("MM") == 22);
+	assert(text_width("MM\nM") == 22);
+	text_line_t line = text_line("one two three", text_width("one two"));
+	assert(line.length == 7 && strcmp(line.next, "three") == 0);
+	line = text_line("one\ntwo", SCREEN_WIDTH);
+	assert(line.length == 3 && strcmp(line.next, "two") == 0);
 	game_t state = {0};
 	start_match(&state, false);
 	state.score[0] = 1;
@@ -34,6 +41,8 @@ int main(int argc, char **argv) {
 	expect_message(&state, "scores!");
 	state.touched[0] = false;
 	expect_message(&state, "laughs at his opponent's inability to serve!");
+	assert(strcmp(state.message, "Inferior Human Controlled Slime 1\n"
+		"laughs at his opponent's inability to serve!") == 0);
 	state.score[0] = 6;
 	expect_message(&state, "wins!");
 	assert(strstr(state.message, "Inferior Human Controlled Slime 1 "));
@@ -91,6 +100,13 @@ int main(int argc, char **argv) {
 	assert(SDL_Init(0) == 0);
 	screen = SDL_CreateRGBSurfaceWithFormat(0, SCREEN_WIDTH, SCREEN_HEIGHT, 32, SDL_PIXELFORMAT_RGBA32);
 	assert(screen);
+	// A narrow text region wraps whole glyphs, retaining their 2x2 pixels.
+	SDL_FillRect(screen, NULL, map_color(screen, 0x000000FF));
+	assert(draw_text("HH", 100, 20, 10, NET_COLOR) == 2);
+	assert(pixel(95, 6) == map_color(screen, NET_COLOR));
+	assert(pixel(96, 6) == map_color(screen, NET_COLOR));
+	assert(pixel(97, 6) == map_color(screen, 0x000000FF));
+	assert(pixel(95, 26) == map_color(screen, NET_COLOR));
 	slime1 = create_circle_sprite(PLAYER_DRAW_RADIUS, PLAYER_DRAW_RADIUS, NET_COLOR);
 	slime2 = create_circle_sprite(PLAYER_DRAW_RADIUS, PLAYER_DRAW_RADIUS, NET_COLOR);
 	ball = create_circle_sprite(BALL_DRAW_RADIUS, 2 * BALL_DRAW_RADIUS + 1, NET_COLOR);
@@ -106,13 +122,7 @@ int main(int argc, char **argv) {
 		assert(pixel(150, 150) == map_color(screen, palettes[tier].ball));
 		assert(pixel(130, 290) == map_color(screen, 0xFFFF00FF));
 		assert(pixel(620, 290) == map_color(screen, palettes[tier].opponent));
-		if(tier == 3) {
-			game.elapsed = FRAME_INTERVAL;
-			render_game();
-			assert(pixel(620, 290) == map_color(screen, NET_COLOR));
-			game.elapsed = 0;
-			render_game();
-		}
+
 		if(argc > 1) {
 			char path[512];
 			snprintf(path, sizeof(path), "%s/stage-%d.bmp", argv[1], tier + 1);
@@ -144,6 +154,21 @@ int main(int argc, char **argv) {
 		char path[512];
 		snprintf(path, sizeof(path), "%s/menu.bmp", argv[1]);
 		assert(SDL_SaveBMP(screen, path) == 0);
+		game.solo = true;
+		game.bot_tier = 1;
+		render_game();
+		snprintf(path, sizeof(path), "%s/continue-menu.bmp", argv[1]);
+		assert(SDL_SaveBMP(screen, path) == 0);
+		start_match(&game, true);
+		game.campaign_score = 12345;
+		game.touched[1] = true;
+		point_message(&game);
+		game.phase = POINT_BREAK;
+		render_game();
+		snprintf(path, sizeof(path), "%s/wrapped-prompts.bmp", argv[1]);
+		assert(SDL_SaveBMP(screen, path) == 0);
+		start_match(&game, false);
+		game.phase = TITLE;
 	}
 
 	// Drive the actual mouse event handler: mode selection and result continuation.
@@ -167,8 +192,7 @@ int main(int argc, char **argv) {
 	click.button.x = 100;
 	assert(handle_event(click, 0));
 	assert(game.solo && game.phase == SERVE && game.bot_tier == 0);
-	SDL_FreeSurface(screen);
 	free_resources();
-	puts("PASS prompts, campaign, replay, pause, and five SDL palettes");
+	puts("PASS prompts, campaign, replay, pause, and three SDL palettes");
 	return 0;
 }
