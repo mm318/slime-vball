@@ -18,7 +18,7 @@ static Uint32 pixel(int x, int y) {
 	return value & (graphics.screen->format->Rmask | graphics.screen->format->Gmask | graphics.screen->format->Bmask | graphics.screen->format->Amask);
 }
 
-int main(int argc, char **argv) {
+int ui_checks_main(int argc, char **argv) {
 	assert(BOT_TIERS == 3);
 	assert(text_width("MM") == 22);
 	assert(text_width("MM\nM") == 22);

@@ -3,13 +3,6 @@ const Build = std.Build;
 const builtin = @import("builtin");
 
 const emsdk_version = "7.0.0";
-const game_sources = [_][]const u8{
-    "src/main.c",
-    "src/game.c",
-    "src/ai.c",
-    "src/replay.c",
-    "src/ui.c",
-};
 
 pub fn build(b: *Build) void {
     const target = b.standardTargetOptions(.{});
@@ -36,18 +29,30 @@ pub fn build(b: *Build) void {
     });
     const sdl_lib = sdl.artifact("SDL2");
 
+    const bindings = b.addTranslateC(.{
+        .root_source_file = b.path("src/bridge.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    bindings.addIncludePath(sdl_lib.getEmittedIncludeTree().path(b, "SDL2"));
+    bindings.defineCMacro("SDL_MAIN_HANDLED", "1");
+    if (sysroot) |include| bindings.addSystemIncludePath(include);
+    const c_api = bindings.createModule();
+
     const game = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
+    game.addImport("c", c_api);
     game.addIncludePath(sdl_lib.getEmittedIncludeTree().path(b, "SDL2"));
     game.addCMacro("SDL_MAIN_HANDLED", "1");
     game.linkLibrary(sdl_lib);
 
     const c_flags = [_][]const u8{ "-std=c11", "-Wall", "-Wextra", "-Wpedantic" };
-    game.addCSourceFiles(.{
-        .files = &game_sources,
+    game.addCSourceFile(.{
+        .file = b.path("src/main.c"),
         .flags = if (web) &(c_flags ++ .{"-fno-sanitize=undefined"}) else &c_flags,
     });
 
@@ -66,17 +71,25 @@ pub fn build(b: *Build) void {
         const run = b.addRunArtifact(exe);
         b.step("run", "Run Slime Volleyball on the desktop").dependOn(&run.step);
 
-        const checks = b.createModule(.{
+        const logic = b.createModule(.{
+            .root_source_file = b.path("src/modules.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,
         });
+        logic.addImport("c", c_api);
+        const checks = b.createModule(.{
+            .root_source_file = b.path("tests/ui.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        checks.addImport("game_modules", logic);
         checks.addIncludePath(sdl_lib.getEmittedIncludeTree().path(b, "SDL2"));
         checks.addCMacro("SDL_MAIN_HANDLED", "1");
-        checks.addCMacro("SLIME_NO_MAIN", "1");
         checks.linkLibrary(sdl_lib);
         if (target.result.os.tag == .linux) checks.linkSystemLibrary("m", .{});
-        checks.addCSourceFiles(.{ .files = &game_sources, .flags = &c_flags });
+        checks.addCSourceFile(.{ .file = b.path("src/main.c"), .flags = &c_flags });
         checks.addCSourceFile(.{ .file = b.path("tests/ui.c"), .flags = &c_flags });
         const ui_test = b.addExecutable(.{ .name = "slime-ui-test", .root_module = checks });
         const test_run = b.addRunArtifact(ui_test);

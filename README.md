@@ -1,6 +1,6 @@
 # Slime Volleyball
 
-A volleyball game in C and SDL2 with the colors and prompts from One Slime.
+A volleyball game in Zig, C, and SDL2 with the colors and prompts from One Slime.
 Click a menu button to start a solo or local match, or press **1** or **2**. Win a rally
 by landing the ball on the other side. The rally winner serves next, and the first
 player to six points wins the match. The ball drops automatically over the server.
@@ -56,15 +56,18 @@ to focus the keyboard. To serve without launching a browser, append
 Serve `index.html`, `index.js`, and `index.wasm` together from `zig-out/web`.
 The game draws its graphics in code, so there is no separate asset package.
 
-The C sources are compiled as separate translation units:
+The source is organized as follows:
 
-- `src/main.c`: replacement physics, SDL drawing, input, and platform loop.
-- `src/game.c`: game phases, progression, scoring, commentary, and pause.
-- `src/ai.c`: computer-player input and interception prediction.
-- `src/replay.c`: position history and replay playback.
-- `src/ui.c`: palettes, bitmap text, menus, results, and HUD.
+- `src/main.zig`: program entry point, SDL initialization, and desktop/browser loops.
+- `src/main.c`: replacement physics, SDL drawing, and input, called by Zig.
+- `src/game.zig`: game phases, progression, scoring, commentary, and pause.
+- `src/ai.zig`: computer-player input and interception prediction.
+- `src/replay.zig`: position history and replay playback.
+- `src/ui.zig` and `src/font.zig`: palettes, bitmap text, menus, results, and HUD.
 
 Shared types and interfaces live in `src/game.h`, `src/app.h`, and `src/ui.h`.
-The UI checks link these implementations directly, with their own entry point.
+The build translates `src/bridge.h` to Zig bindings, so the C headers define the
+shared ABI. The UI checks retain a C test body and enter through `tests/ui.zig`,
+exercising the Zig modules through the same interface used by `main.c`.
 
 See [COPYING](COPYING) for the license.
