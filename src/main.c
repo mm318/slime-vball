@@ -132,6 +132,7 @@ void reset_match(game_t *state) {
 	state->score[0] = state->score[1] = 0;
 	state->server = 0;
 	state->paused = false;
+	state->bot_serve_type = -1;
 	state->elapsed = 0;
 	state->last_step = -1;
 	state->level_bonus = state->time_bonus = state->flawless_bonus = 0;
@@ -143,7 +144,7 @@ void step_game(game_t *state, double now) {
 
 	if(state->solo) {
 		controls_t right = bot_input(state);
-		if(right.direction) horizontal_input(state, 1);
+		if(right.moved) horizontal_input(state, 1);
 		state->players[1].vel.x = right.direction * PLAYER_SPEED;
 		if(right.jump) {
 			jump_player(&state->players[1]);

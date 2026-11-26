@@ -44,6 +44,8 @@ typedef struct {
 typedef struct {
 	int direction;
 	bool jump;
+	// A LEFT/RIGHT command occurred, even if a later STOP cancelled it.
+	bool moved;
 } controls_t;
 
 typedef struct {
@@ -67,6 +69,8 @@ typedef struct {
 	int server;
 	bool solo;
 	int bot_tier;
+	// Reference controllers retain their serve state between rallies.
+	int bot_serve_type;
 	bool paused;
 	phase_t phase;
 	bool serve_moved;
@@ -108,7 +112,7 @@ void toggle_pause(game_t *state, double now);
 bool advance_game_phase(game_t *state, double now);
 
 // Computer input and position-only replay.
-controls_t bot_input(const game_t *state);
+controls_t bot_input(game_t *state);
 void record_frame(game_t *state);
 void press_replay(game_t *state, double now);
 void advance_replay(game_t *state);

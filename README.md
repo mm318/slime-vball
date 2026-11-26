@@ -19,6 +19,10 @@ The three stages reproduce the original court, ball, and opponent colors, with
 rally commentary, score and time, level bonuses, and victory and loss screens.
 The existing bitmap font keeps its original width and height, with newlines
 for long prompts. The floating point physics are retained.
+The three computer players port the original `_t`, `ot`, and `pt` controllers,
+including serve state, randomized decisions, and the original predictor quirks.
+Their decisions use double-precision court units; collision physics still uses
+the existing floating point implementation.
 
 ## Desktop
 
@@ -35,6 +39,14 @@ Build and play:
 zig build
 zig build run
 zig build test
+```
+
+The tests compare 24,576 AI decisions with fingerprints generated from the
+pinned One Slime bundle, covering ordered commands, serve state, and random
+call counts. To regenerate those fingerprints from a local bundle:
+
+```sh
+node tests/ai_reference.mjs /path/to/OneSlime.min.js
 ```
 
 The executable is `zig-out/bin/slime-vball` (`.exe` on Windows). For a release

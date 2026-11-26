@@ -89,7 +89,26 @@ pub fn build(b: *Build) void {
         checks.addCSourceFile(.{ .file = b.path("tests/ui.c"), .flags = &c_flags });
         const ui_test = b.addExecutable(.{ .name = "slime-ui-test", .root_module = checks });
         const test_run = b.addRunArtifact(ui_test);
-        b.step("test", "Check prompts, progression, replay, and SDL colors").dependOn(&test_run.step);
+        const test_step = b.step("test", "Check UI, gameplay, and reference AI behavior");
+        test_step.dependOn(&test_run.step);
+
+        const ai = b.createModule(.{
+            .root_source_file = b.path("src/ai.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        ai.addImport("c", c_api);
+        const ai_checks = b.createModule(.{
+            .root_source_file = b.path("tests/ai.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        ai_checks.addImport("ai", ai);
+        const ai_test = b.addTest(.{ .root_module = ai_checks });
+        const ai_run = b.addRunArtifact(ai_test);
+        test_step.dependOn(&ai_run.step);
     }
 }
 

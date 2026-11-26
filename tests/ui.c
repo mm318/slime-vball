@@ -65,6 +65,31 @@ int ui_checks_main(int argc, char **argv) {
 		assert(state.phase == (tier == BOT_TIERS - 1 ? TITLE : SERVE));
 	}
 
+	// AI state survives a rally reset, but a new match recreates its controller.
+	start_match(&state, true);
+	assert(state.bot_serve_type == -1);
+	state.bot_serve_type = 4;
+	reset_rally(&state);
+	assert(state.bot_serve_type == 4);
+	reset_match(&state);
+	assert(state.bot_serve_type == -1);
+	// A serve routine can issue no movement command: keep its previous velocity.
+	state.bot_serve_type = 0;
+	state.players[1].vel.x = 6;
+	state.ball.pos.x = 600;
+	controls_t controls = bot_input(&state);
+	assert(controls.direction == 1 && !controls.moved && !controls.jump);
+	// Translate court units and apply the reference's RIGHT/JUMP commands.
+	state.ball.pos.x = 600;
+	state.ball.pos.y = PLAY_HEIGHT - 290 * 0.375f;
+	state.ball.vel.y = 4 * 0.375f;
+	controls = bot_input(&state);
+	assert(controls.direction == 1 && controls.moved && controls.jump);
+	step_game(&state, 0);
+	assert(state.players[1].pos.x == 606);
+	assert(state.players[1].pos.y == PLAY_HEIGHT - 29 * 0.375f);
+	assert(state.serve_moved);
+
 	// An idle vertical serve does not earn ace/winner credit until moved.
 	start_match(&state, false);
 	for(int i = 0; i < 23; i++) step_game(&state, i * FRAME_INTERVAL);

@@ -51,6 +51,7 @@ pub fn main() u8 {
         c.SDL_Log("Could not initialize SDL: %s", c.SDL_GetError());
         return c.EXIT_FAILURE;
     }
+    c.srand(@truncate(c.SDL_GetPerformanceCounter()));
     view.window = c.SDL_CreateWindow("Slime Volleyball: One Slime", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, c.WINDOW_WIDTH, c.WINDOW_HEIGHT, 0);
     view.screen = c.SDL_CreateRGBSurfaceWithFormat(0, c.SCREEN_WIDTH, c.SCREEN_HEIGHT, 32, c.SDL_PIXELFORMAT_RGBA32);
     if (view.window == null or view.screen == null or c.SDL_GetWindowSurface(view.window) == null) {
