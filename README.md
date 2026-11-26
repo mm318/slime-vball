@@ -56,4 +56,15 @@ to focus the keyboard. To serve without launching a browser, append
 Serve `index.html`, `index.js`, and `index.wasm` together from `zig-out/web`.
 The game draws its graphics in code, so there is no separate asset package.
 
+The C sources are compiled as separate translation units:
+
+- `src/main.c`: replacement physics, SDL drawing, input, and platform loop.
+- `src/game.c`: game phases, progression, scoring, commentary, and pause.
+- `src/ai.c`: computer-player input and interception prediction.
+- `src/replay.c`: position history and replay playback.
+- `src/ui.c`: palettes, bitmap text, menus, results, and HUD.
+
+Shared types and interfaces live in `src/game.h`, `src/app.h`, and `src/ui.h`.
+The UI checks link these implementations directly, with their own entry point.
+
 See [COPYING](COPYING) for the license.

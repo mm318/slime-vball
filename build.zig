@@ -3,6 +3,13 @@ const Build = std.Build;
 const builtin = @import("builtin");
 
 const emsdk_version = "7.0.0";
+const game_sources = [_][]const u8{
+    "src/main.c",
+    "src/game.c",
+    "src/ai.c",
+    "src/replay.c",
+    "src/ui.c",
+};
 
 pub fn build(b: *Build) void {
     const target = b.standardTargetOptions(.{});
@@ -39,8 +46,8 @@ pub fn build(b: *Build) void {
     game.linkLibrary(sdl_lib);
 
     const c_flags = [_][]const u8{ "-std=c11", "-Wall", "-Wextra", "-Wpedantic" };
-    game.addCSourceFile(.{
-        .file = b.path("src/main.c"),
+    game.addCSourceFiles(.{
+        .files = &game_sources,
         .flags = if (web) &(c_flags ++ .{"-fno-sanitize=undefined"}) else &c_flags,
     });
 
@@ -66,8 +73,10 @@ pub fn build(b: *Build) void {
         });
         checks.addIncludePath(sdl_lib.getEmittedIncludeTree().path(b, "SDL2"));
         checks.addCMacro("SDL_MAIN_HANDLED", "1");
+        checks.addCMacro("SLIME_NO_MAIN", "1");
         checks.linkLibrary(sdl_lib);
         if (target.result.os.tag == .linux) checks.linkSystemLibrary("m", .{});
+        checks.addCSourceFiles(.{ .files = &game_sources, .flags = &c_flags });
         checks.addCSourceFile(.{ .file = b.path("tests/ui.c"), .flags = &c_flags });
         const ui_test = b.addExecutable(.{ .name = "slime-ui-test", .root_module = checks });
         const test_run = b.addRunArtifact(ui_test);
