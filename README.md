@@ -1,6 +1,7 @@
 # Slime Volleyball
 
-A volleyball game in C and SDL2 that starts in solo mode. Win a rally
+A volleyball game in C and SDL2 with the colors and prompts from One Slime.
+Click a menu button to start a solo or local match, or press **1** or **2**. Win a rally
 by landing the ball on the other side. The rally winner serves next, and the first
 player to six points wins the match. The ball drops automatically over the server.
 
@@ -8,11 +9,16 @@ player to six points wins the match. The ball drops automatically over the serve
 | --- | --- |
 | **Left / Right**, **Up** | Move and jump as player 1 on the left |
 | **A / D**, **W** | Move and jump as player 2 on the right in local play |
-| **1** / **2** | Start a solo or local match. Winning solo matches raises the CPU through three difficulty tiers. |
-| **Space** | Replay up to the last four seconds of a rally during the point break, or skip playback |
-| **P** / **R** | Pause or resume, or restart the current match |
+| **1** / **2** | Start a new solo or local match from the first stage |
+| **Space** | Request a replay during the point break; press again during playback to continue |
+| **P** / **R** (or **K**) | Pause or resume, or restart the current match |
+| **Mouse click** | Choose a mode, or continue from the match result |
+| **C** | Continue the current solo stage from the menu |
 
-![Slime Volleyball screenshot](https://raw.githubusercontent.com/parsiad/slime-vball/gh-pages/slime-vball.png)
+The five stages reproduce the original court, ball, and opponent colors, with
+rally commentary, score and time, level bonuses, and victory and loss screens.
+The existing bitmap font and floating point physics are retained. Stages four
+and five reuse the strongest existing CPU controller.
 
 ## Desktop
 
@@ -28,6 +34,7 @@ Build and play:
 ```sh
 zig build
 zig build run
+zig build test
 ```
 
 The executable is `zig-out/bin/slime-vball` (`.exe` on Windows). For a release
