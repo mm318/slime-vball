@@ -1,9 +1,16 @@
 # Slime Volleyball
 
-A volleyball game in Zig, C, and SDL2 with the colors and prompts from One Slime.
-Tap or click a menu button to start a solo or local match. Win a rally
-by landing the ball on the other side. The rally winner serves next, and the first
-player to six points wins the match. The ball drops automatically over the server.
+A desktop and browser volleyball game written in Zig, C, and SDL2. Play through
+three solo stages against computer opponents, or play a local two-player match.
+
+![Slime Volleyball gameplay](doc/screenshot.png)
+
+Win a rally by landing the ball on the other side. The rally winner serves next,
+and the first player to six points wins the match. The ball drops automatically
+over the server. Solo play awards points for rallies, level completion, speed,
+and flawless victories. Each stage has its own court and opponent colors.
+
+## Controls
 
 | Input | Action |
 | --- | --- |
@@ -18,21 +25,14 @@ player to six points wins the match. The ball drops automatically over the serve
 
 Mode selection and Continue respond only to mouse clicks or touch taps.
 Continue is disabled on the initial screen. Pausing opens the same three-button
-menu; a completed campaign
-continues into a new solo run, and a local game over continues into a rematch.
+menu. After completing the solo campaign, Continue starts a new solo run; after
+a local match, it starts a rematch. The R replay button is at the top left, and
+the P pause button is at the top right.
+
 In local touch play, the left and right halves control their respective slimes
 with separate fingers. In solo mode, dragging anywhere controls the human.
 Keyboard and touch can be mixed; releasing a drag restores any held keyboard
 direction. Focus loss, pause, and rally resets cancel active gestures.
-
-The three stages reproduce the original court, ball, and opponent colors, with
-rally commentary, score and time, level bonuses, and victory and loss screens.
-The existing bitmap font keeps its original width and height, with newlines
-for long prompts. The floating point physics are retained.
-The three computer players port the original `_t`, `ot`, and `pt` controllers,
-including serve state, randomized decisions, and the original predictor quirks.
-Their decisions use double-precision court units; collision physics still uses
-the existing floating point implementation.
 
 ## Desktop
 
@@ -48,21 +48,11 @@ Build and play:
 ```sh
 zig build
 zig build run
-zig build test
-```
-
-The tests compare 24,576 AI decisions with fingerprints generated from the
-pinned One Slime bundle, covering ordered commands, serve state, and random
-call counts. To regenerate those fingerprints from a local bundle:
-
-```sh
-node tests/ai_reference.mjs /path/to/OneSlime.min.js
 ```
 
 The executable is `zig-out/bin/slime-vball` (`.exe` on Windows). For a release
-build, add `-Doptimize=fast`.
-Desktop and browser builds display the court at 1.5× scale: 1125 × 563 pixels
-(height rounded to the nearest whole pixel).
+build, add `-Doptimize=fast`. Desktop and browser builds display the court at
+1125 × 563 pixels by default.
 
 ## Browser
 
@@ -71,17 +61,28 @@ zig build install-emsdk
 zig build -Dtarget=wasm32-emscripten -Doptimize=fast run
 ```
 
-The first command installs the pinned **Emscripten 7.0.0** SDK. Click the court
+The first command installs the **Emscripten 7.0.0** SDK. Tap or click the court
 to focus the keyboard. To serve without launching a browser, append
 `-- --no_browser` to the run command.
 
 Serve `index.html`, `index.js`, and `index.wasm` together from `zig-out/web`.
-The game draws its graphics in code, so there is no separate asset package.
+
+## Development
+
+Run the checks with:
+
+```sh
+zig build test
+```
+
+The tests cover menus, keyboard and touch input, campaign progression, replay,
+pause, SDL surface colors, and 24,576 computer-player decisions. AI checks cover
+command order, serve state, and random call counts.
 
 The source is organized as follows:
 
 - `src/main.zig`: program entry point, SDL initialization, and desktop/browser loops.
-- `src/main.c`: replacement physics, SDL drawing, and movement primitives, called by Zig.
+- `src/main.c`: physics, SDL drawing, and movement primitives, called by Zig.
 - `src/input.zig`: mouse/touch button activation, drag gestures, and keyboard input.
 - `src/game.zig`: game phases, progression, scoring, commentary, and pause.
 - `src/ai.zig`: computer-player input and interception prediction.
@@ -91,7 +92,7 @@ The source is organized as follows:
 Shared types and interfaces live in `src/game.h`, `src/app.h`, and `src/ui.h`.
 The build translates `src/bridge.h` to Zig bindings, so the C headers define the
 shared ABI. The UI checks are implemented in `tests/ui.zig`, exercising the
-modules through the same interface used by `main.c`. The checks also retain
+modules through the same interface used by `main.c`. The checks also support
 optional BMP screenshot output.
 
 See [COPYING](COPYING) for the license.
