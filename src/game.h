@@ -2,6 +2,7 @@
 #define SLIME_GAME_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 enum {
 	SCREEN_WIDTH = 750,
@@ -20,6 +21,7 @@ enum {
 	BALL_DRAW_RADIUS = 11,
 	MAX_SCORE = 6,
 	POINT_PADDING = 35,
+	POINT_INSET = 64,
 	POINT_RADIUS = 12,
 	POINT_CENTER_Y = 30,
 	REPLAY_FRAMES = 240,
@@ -63,6 +65,23 @@ typedef enum {
 } phase_t;
 
 typedef struct {
+	bool active;
+	int64_t device, finger;
+	float anchor_x, anchor_y;
+	int direction;
+} drag_t;
+
+typedef struct {
+	drag_t drags[2];
+	bool left[2], right[2];
+	int keyboard_direction[2];
+	int pressed_button;
+	bool press_touch, press_cancelled;
+	int64_t press_device, press_finger;
+	float press_x, press_y;
+} input_t;
+
+typedef struct {
 	body_t players[2];
 	body_t ball;
 	int score[2];
@@ -73,6 +92,7 @@ typedef struct {
 	int bot_serve_type;
 	bool paused;
 	phase_t phase;
+	input_t input;
 	bool serve_moved;
 	bool touched[2];
 	int contacts[2];
@@ -108,6 +128,7 @@ void horizontal_input(game_t *state, int side);
 void record_contact(game_t *state, int side);
 void point_message(game_t *state);
 void toggle_pause(game_t *state, double now);
+void clear_input(game_t *state);
 // Returns true when this frame should advance the rally simulation.
 bool advance_game_phase(game_t *state, double now);
 

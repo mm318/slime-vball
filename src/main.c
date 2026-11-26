@@ -125,6 +125,7 @@ void reset_rally(game_t *state) {
 	state->message[0] = '\0';
 	state->history_next = 0;
 	state->history_count = 0;
+	clear_input(state);
 	record_frame(state);
 }
 
@@ -171,6 +172,7 @@ void step_game(game_t *state, double now) {
 		point_message(state);
 		state->phase = POINT_BREAK;
 		state->point_deadline = now + POINT_DELAY;
+		clear_input(state);
 	}
 	record_frame(state);
 }
@@ -243,7 +245,7 @@ static void draw_slime(SDL_Surface *screen, const game_t *state, SDL_Rect rect, 
 }
 
 static void draw_score(SDL_Surface *surface, const game_t *state, bool left) {
-	int x0 = left ? POINT_PADDING : SCREEN_WIDTH - POINT_PADDING;
+	int x0 = left ? POINT_INSET : SCREEN_WIDTH - POINT_INSET;
 	int dx = left ? POINT_PADDING : -POINT_PADDING;
 	int score = state->score[left ? 0 : 1];
 	Uint32 color = left || !state->solo ? 0xFFFF00FF : palette(state)->opponent;
@@ -277,7 +279,7 @@ bool player_key(game_t *state, SDL_Keycode key, bool pressed) {
 		case SDLK_w:     side = 1; direction =  0; break;
 		default: return false;
 	}
-	if(state->phase == TITLE || state->phase == RESULT || state->phase == REPLAY) return true;
+	if(state->paused || (state->phase != SERVE && state->phase != RALLY)) return true;
 	if(side == 1 && state->solo) {
 		return true;
 	}
@@ -297,11 +299,11 @@ bool player_key(game_t *state, SDL_Keycode key, bool pressed) {
 void render_game(graphics_t *graphics, const game_t *state) {
 	SDL_FillRect(graphics->screen, NULL, map_color(graphics->screen, palette(state)->sky));
 	SDL_FillRect(graphics->screen, &graphics->ground, map_color(graphics->screen, palette(state)->ground));
-	SDL_FillRect(graphics->screen, &graphics->net, map_color(graphics->screen, NET_COLOR));
 	draw_score(graphics->screen, state, true);
 	draw_score(graphics->screen, state, false);
 
-	if(state->phase != TITLE && state->phase != RESULT) {
+	if(!menu_visible(state)) {
+		SDL_FillRect(graphics->screen, &graphics->net, map_color(graphics->screen, NET_COLOR));
 		positions_t display = display_positions(state);
 		SDL_Rect p1 = {(int)roundf(display.players[0].x) - PLAYER_DRAW_RADIUS,
 			(int)roundf(display.players[0].y) - PLAYER_DRAW_RADIUS, 0, 0};
@@ -316,61 +318,7 @@ void render_game(graphics_t *graphics, const game_t *state) {
 		SDL_BlitSurface(graphics->ball, NULL, graphics->screen, &ball_rect);
 	}
 
-	if(state->phase == TITLE) draw_menu(graphics->screen, state);
-	else if(state->phase == RESULT) draw_result(graphics->screen, state);
+	if(menu_visible(state)) draw_menu(graphics->screen, state);
 	draw_hud(graphics->screen, state);
-}
-
-bool handle_event(game_t *state, SDL_Window *window, SDL_Event event, double now) {
-	if(event.type == SDL_QUIT) {
-		return false;
-	}
-	if(event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
-		if(state->phase == RESULT) continue_result(state);
-		else if(state->phase == TITLE) {
-			int width = SCREEN_WIDTH, height = SCREEN_HEIGHT;
-			if(window) SDL_GetWindowSize(window, &width, &height);
-			SDL_Point point = {event.button.x * SCREEN_WIDTH / width,
-				event.button.y * SCREEN_HEIGHT / height};
-			SDL_Rect solo = menu_button(true), local = menu_button(false);
-			if(SDL_PointInRect(&point, &solo)) start_match(state, true);
-			else if(SDL_PointInRect(&point, &local)) start_match(state, false);
-		}
-		return true;
-	}
-	if(event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
-		state->players[0].vel.x = state->players[1].vel.x = 0;
-	}
-	if(event.type != SDL_KEYDOWN && event.type != SDL_KEYUP) {
-		return true;
-	}
-	bool pressed = event.type == SDL_KEYDOWN;
-	if(player_key(state, event.key.keysym.sym, pressed) || !pressed || event.key.repeat) {
-		return true;
-	}
-	switch(event.key.keysym.sym) {
-		case SDLK_1:
-		case SDLK_2:
-			start_match(state, event.key.keysym.sym == SDLK_1);
-			break;
-		case SDLK_c:
-			if(state->phase == TITLE && state->bot_tier > 0) {
-				state->solo = true;
-				state->campaign_score = 0;
-				reset_match(state);
-			}
-			break;
-		case SDLK_k:
-		case SDLK_r:
-			state->campaign_score = 0;
-			reset_match(state);
-			break;
-		case SDLK_p:
-			toggle_pause(state, now);
-			break;
-		case SDLK_SPACE:
-			press_replay(state, now);
-			break;
-	}
-	return true;
+	draw_toolbar(graphics->screen, state);
 }

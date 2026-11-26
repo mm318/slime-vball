@@ -1,7 +1,7 @@
 # Slime Volleyball
 
 A volleyball game in Zig, C, and SDL2 with the colors and prompts from One Slime.
-Click a menu button to start a solo or local match, or press **1** or **2**. Win a rally
+Tap or click a menu button to start a solo or local match. Win a rally
 by landing the ball on the other side. The rally winner serves next, and the first
 player to six points wins the match. The ball drops automatically over the server.
 
@@ -9,11 +9,21 @@ player to six points wins the match. The ball drops automatically over the serve
 | --- | --- |
 | **Left / Right**, **Up** | Move and jump as player 1 on the left |
 | **A / D**, **W** | Move and jump as player 2 on the right in local play |
-| **1** / **2** | Start a new solo or local match from the first stage |
-| **Space** | Request a replay during the point break; press again during playback to continue |
-| **P** / **R** (or **K**) | Pause or resume, or restart the current match |
-| **Mouse click** | Choose a mode, or continue from the match result |
-| **C** | Continue the current solo stage from the menu |
+| **Touch drag left / right** | Move until the finger lifts; reversing the drag reverses direction |
+| **Touch drag up** | Jump, including while moving horizontally |
+| **Space** or **R button** | Request replay during a point break, or leave replay; button grey when unavailable |
+| **P** or **P button** | Pause or resume |
+| **Continue button** | Resume a pause, retry the current stage after a loss, or advance after a stage win |
+| **One / two player buttons** | Start a new game from any menu |
+
+Mode selection and Continue respond only to mouse clicks or touch taps.
+Continue is disabled on the initial screen. Pausing opens the same three-button
+menu; a completed campaign
+continues into a new solo run, and a local game over continues into a rematch.
+In local touch play, the left and right halves control their respective slimes
+with separate fingers. In solo mode, dragging anywhere controls the human.
+Keyboard and touch can be mixed; releasing a drag restores any held keyboard
+direction. Focus loss, pause, and rally resets cancel active gestures.
 
 The three stages reproduce the original court, ball, and opponent colors, with
 rally commentary, score and time, level bonuses, and victory and loss screens.
@@ -71,7 +81,8 @@ The game draws its graphics in code, so there is no separate asset package.
 The source is organized as follows:
 
 - `src/main.zig`: program entry point, SDL initialization, and desktop/browser loops.
-- `src/main.c`: replacement physics, SDL drawing, and input, called by Zig.
+- `src/main.c`: replacement physics, SDL drawing, and movement primitives, called by Zig.
+- `src/input.zig`: mouse/touch button activation, drag gestures, and keyboard input.
 - `src/game.zig`: game phases, progression, scoring, commentary, and pause.
 - `src/ai.zig`: computer-player input and interception prediction.
 - `src/replay.zig`: position history and replay playback.

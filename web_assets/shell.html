@@ -6,18 +6,17 @@
   <title>Slime Volleyball: One Slime</title>
   <style>
     body { margin: 1rem; text-align: center; font-family: system-ui, sans-serif; }
-    canvas { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+    canvas { display: block; max-width: 100%; height: auto; margin: 0 auto; touch-action: none; user-select: none; -webkit-user-select: none; }
   </style>
 </head>
 <body>
   <canvas id="canvas" width="1125" height="563" tabindex="0" aria-label="Slime Volleyball court"></canvas>
-  <p><kbd>1</kbd> Solo · <kbd>2</kbd> Local · <kbd>P</kbd> Pause · <kbd>R</kbd> Restart · <kbd>Space</kbd> Replay after a point</p>
-  <p>Click a menu button to start or continue a match. Player 1 uses Left/Right and Up. In local play, player 2 uses A/D and W.</p>
-  <p>The ball drops automatically over the server. The first player to six points wins.</p>
+  <p>Tap or click a menu button to start or continue a match. Drag left/right to move and up to jump. Player 1 uses Left/Right and Up. In local play, player 2 uses A/D and W.</p>
   <script>
     const canvas = document.getElementById("canvas");
-    canvas.addEventListener("click", () => canvas.focus());
-    const gameKeys = ["a", "d", "w", "arrowleft", "arrowright", "arrowup", "1", "2", "p", "r", "k", "c", " "];
+    canvas.addEventListener("pointerdown", () => canvas.focus());
+    canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+    const gameKeys = ["a", "d", "w", "arrowleft", "arrowright", "arrowup", " ", "p"];
     canvas.addEventListener("keydown", (event) => {
       if (gameKeys.includes(event.key.toLowerCase())) {
         event.preventDefault();

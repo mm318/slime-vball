@@ -86,49 +86,108 @@ fn centered(screen: *c.SDL_Surface, value: []const u8, baseline: c_int) void {
     _ = drawSlice(screen, value, c.SCREEN_WIDTH / 2, baseline, c.SCREEN_WIDTH - 30, c.NET_COLOR);
 }
 
-pub export fn menu_button(solo: bool) c.SDL_Rect {
-    return .{ .x = if (solo) 10 else c.SCREEN_WIDTH / 2 + 10, .y = 210, .w = c.SCREEN_WIDTH / 2 - 20, .h = 74 };
+pub export fn menu_visible(state: *const c.game_t) bool {
+    return state.phase == c.TITLE or state.phase == c.RESULT or state.paused;
+}
+
+pub export fn ui_button_rect(button: c_int) c.SDL_Rect {
+    const toolbar_size = 32;
+    return switch (button) {
+        c.UI_CONTINUE, c.UI_SOLO, c.UI_LOCAL => .{ .x = 155, .y = 210 + (button - c.UI_CONTINUE) * 56, .w = 440, .h = 46 },
+        c.UI_REPLAY, c.UI_PAUSE => .{ .x = if (button == c.UI_REPLAY) 8 else c.SCREEN_WIDTH - 8 - toolbar_size, .y = c.POINT_CENTER_Y - toolbar_size / 2, .w = toolbar_size, .h = toolbar_size },
+        else => .{ .x = 0, .y = 0, .w = 0, .h = 0 },
+    };
+}
+
+pub export fn ui_button_enabled(state: *const c.game_t, button: c_int) bool {
+    return switch (button) {
+        c.UI_CONTINUE => state.paused or state.phase == c.RESULT,
+        c.UI_SOLO, c.UI_LOCAL => true,
+        c.UI_REPLAY => !state.paused and state.history_count > 1 and
+            (state.phase == c.REPLAY or (state.phase == c.POINT_BREAK and !state.replay_requested and state.last_step < state.point_deadline)),
+        c.UI_PAUSE => state.phase != c.TITLE and state.phase != c.RESULT,
+        else => false,
+    };
+}
+
+fn drawButton(screen: *c.SDL_Surface, state: *const c.game_t, button: c_int, label: []const u8) void {
+    const rect = ui_button_rect(button);
+    const enabled = ui_button_enabled(state, button);
+    _ = c.SDL_FillRect(screen, &rect, c.map_color(screen, if (enabled) c.NET_COLOR else 0x666666FF));
+    var lines: c_int = 1;
+    for (label) |char| if (char == '\n') {
+        lines += 1;
+    };
+    const height = c.TEXT_HEIGHT + (lines - 1) * c.TEXT_LINE_HEIGHT;
+    const baseline = rect.y + @divTrunc(rect.h - height, 2) + c.TEXT_HEIGHT;
+    _ = drawSlice(screen, label, rect.x + @divTrunc(rect.w, 2), baseline, rect.w - 12, if (enabled) palette(state).sky else 0xB0B0B0FF);
+}
+
+fn menuText(screen: *c.SDL_Surface, value: []const u8) void {
+    const width = c.SCREEN_WIDTH - 30;
+    var remaining = value;
+    var lines: c_int = 0;
+    while (remaining.len > 0) {
+        const line = nextLine(remaining, width);
+        lines += 1;
+        remaining = remaining[line.next..];
+    }
+    if (lines == 0) return;
+
+    // Center the complete block between the HUD and buttons, spreading its
+    // lines when space permits. Measure wrapping before choosing the spacing.
+    const top = c.HUD_SCORE_BASELINE + c.TEXT_LINE_HEIGHT + 16;
+    const bottom = ui_button_rect(c.UI_CONTINUE).y - 18;
+    const spacing = if (lines > 1) @min(c.TEXT_LINE_HEIGHT + 14, @divTrunc(bottom - top - c.TEXT_HEIGHT, lines - 1)) else 0;
+    const height = c.TEXT_HEIGHT + (lines - 1) * spacing;
+    var baseline = top + @divTrunc(bottom - top - height, 2) + c.TEXT_HEIGHT;
+    remaining = value;
+    while (remaining.len > 0) {
+        const line = nextLine(remaining, width);
+        _ = drawSlice(screen, remaining[0..line.length], c.SCREEN_WIDTH / 2, baseline, width, c.NET_COLOR);
+        baseline += spacing;
+        remaining = remaining[line.next..];
+    }
 }
 
 pub export fn draw_menu(screen: *c.SDL_Surface, state: *const c.game_t) void {
-    centered(screen, "Slime Volleyball: One Slime", 106);
-    centered(screen, "Written by Quin Pendragon and Daniel Wedge", 153);
-    centered(screen, "http://oneslime.net/", 181);
-    for (0..2) |side| {
-        const rect = menu_button(side == 0);
-        _ = c.SDL_FillRect(screen, &rect, c.map_color(screen, c.NET_COLOR));
-        const continuing = state.bot_tier > 0 and side == 0;
-        var buffer: [128]u8 = undefined;
-        const label = text(&buffer, "Click here to start a\n{s} player game!{s}", .{ if (side == 0) "one" else "two", if (continuing) "\nor press C to continue..." else "" });
-        const height = c.TEXT_HEIGHT + @as(c_int, if (continuing) 2 else 1) * c.TEXT_LINE_HEIGHT;
-        const baseline = rect.y + @divTrunc(rect.h - height, 2) + c.TEXT_HEIGHT;
-        _ = drawSlice(screen, label, rect.x + @divTrunc(rect.w, 2), baseline, rect.w - 16, palette(state).sky);
+    if (state.paused) {
+        menuText(screen, "Paused");
+    } else if (state.phase == c.RESULT) {
+        draw_result(screen, state);
+    } else {
+        centered(screen, "Slime Volleyball: One Slime", 106);
+        centered(screen, "Written by Quin Pendragon and Daniel Wedge", 153);
+        centered(screen, "http://oneslime.net/", 181);
     }
+    drawButton(screen, state, c.UI_CONTINUE, "Continue");
+    drawButton(screen, state, c.UI_SOLO, "Click here to start a\none player game!");
+    drawButton(screen, state, c.UI_LOCAL, "Click here to start a\ntwo player game!");
 }
 
 pub export fn draw_result(screen: *c.SDL_Surface, state: *const c.game_t) void {
-    var buffer: [128]u8 = undefined;
+    var buffer: [256]u8 = undefined;
     if (state.solo and state.server == 0) {
         if (state.bot_tier == c.BOT_TIERS - 1) {
-            centered(screen, "YOU WIN!", 181);
-            centered(screen, "The Slimes bow down before the new Slime King!", 204);
+            menuText(screen, "YOU WIN!\nThe Slimes bow down before the new Slime King!");
         } else {
-            centered(screen, text(&buffer, "Level {d} clear!", .{state.bot_tier + 1}), 125);
-            centered(screen, text(&buffer, "Your score: {d}", .{state.campaign_score}), 169);
-            centered(screen, text(&buffer, "Level bonus: {d} points", .{state.level_bonus}), 207);
-            centered(screen, text(&buffer, "Time bonus: {d} points", .{state.time_bonus}), 226);
-            if (state.flawless_bonus != 0) centered(screen, text(&buffer, "Flawless Victory: {d} points", .{state.flawless_bonus}), 245);
+            var bonus_buffer: [64]u8 = undefined;
+            const bonus = if (state.flawless_bonus != 0) text(&bonus_buffer, "\nFlawless Victory: {d} points", .{state.flawless_bonus}) else "";
+            menuText(screen, text(&buffer, "Level {d} clear!\nYour score: {d}\nLevel bonus: {d} points\nTime bonus: {d} points{s}", .{
+                state.bot_tier + 1, state.campaign_score, state.level_bonus, state.time_bonus, bonus,
+            }));
         }
     } else {
-        const panel: c.SDL_Rect = .{ .x = 15, .y = 87, .w = c.SCREEN_WIDTH - 30, .h = 140 };
-        _ = c.SDL_FillRect(screen, &panel, c.map_color(screen, palette(state).ground));
         if (state.solo) {
-            centered(screen, loss_lines[index(state.bot_tier)][0], 131);
-            centered(screen, loss_lines[index(state.bot_tier)][1], 150);
-        } else centered(screen, std.mem.sliceTo(&state.local_result, 0), 131);
-        centered(screen, "GAME OVER", 207);
+            const commentary = loss_lines[index(state.bot_tier)];
+            menuText(screen, text(&buffer, "GAME OVER\n{s}\n{s}", .{ commentary[0], commentary[1] }));
+        } else menuText(screen, text(&buffer, "GAME OVER\n{s}", .{std.mem.sliceTo(&state.local_result, 0)}));
     }
-    centered(screen, "Click the mouse to continue...", 329);
+}
+
+pub export fn draw_toolbar(screen: *c.SDL_Surface, state: *const c.game_t) void {
+    drawButton(screen, state, c.UI_REPLAY, "R");
+    drawButton(screen, state, c.UI_PAUSE, "P");
 }
 
 pub export fn draw_hud(screen: *c.SDL_Surface, state: *const c.game_t) void {
@@ -149,6 +208,5 @@ pub export fn draw_hud(screen: *c.SDL_Surface, state: *const c.game_t) void {
     _ = c.SDL_FillRect(screen, &backing, c.map_color(screen, palette(state).sky));
     const baseline = if (state.solo) c.HUD_SCORE_BASELINE else c.HUD_SCORE_BASELINE + c.TEXT_LINE_HEIGHT;
     _ = drawSlice(screen, label, c.SCREEN_WIDTH / 2, baseline, c.HUD_WIDTH, c.NET_COLOR);
-    const message = if (state.paused) "Press P to continue . . ." else if (state.phase == c.REPLAY) "Press space to continue..." else std.mem.sliceTo(&state.message, 0);
-    if (state.phase != c.RESULT) centered(screen, message, 329);
+    if (!menu_visible(state)) centered(screen, if (state.phase == c.REPLAY) "Replay" else std.mem.sliceTo(&state.message, 0), 329);
 }

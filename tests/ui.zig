@@ -70,7 +70,8 @@ fn run(directory: ?[]const u8) !void {
         try expect(state.flawless_bonus == (@as(c_int, 1000) << @intCast(tier)));
         try expect(state.campaign_score == before + (@as(c_int, 2490) << @intCast(tier)));
         c.continue_result(&state);
-        try expect(state.phase == (if (tier == c.BOT_TIERS - 1) c.TITLE else c.SERVE));
+        try expect(state.phase == c.SERVE);
+        try expect(state.bot_tier == (if (tier == c.BOT_TIERS - 1) 0 else tier + 1));
     }
 
     // AI state survives a rally reset, but a new match recreates its controller.
@@ -107,7 +108,7 @@ fn run(directory: ?[]const u8) !void {
     try expect(c.player_key(&state, c.SDLK_RIGHT, true));
     try expect(state.serve_moved);
 
-    // Replay waits for the point break, loops, then exits on Space.
+    // Replay waits for the point break, loops, then exits on another request.
     state.phase = c.POINT_BREAK;
     state.point_deadline = 2;
     c.press_replay(&state, 1);
@@ -181,9 +182,8 @@ fn run(directory: ?[]const u8) !void {
     c.render_game(&graphics, &game);
     try expect(pixel(&graphics, 620, 290) == c.map_color(graphics.screen, 0xFFFF00FF));
     game.phase = c.TITLE;
-    _ = try std.mem.printSentinel(&game.message, "Click the mouse to play!", .{}, 0);
     c.render_game(&graphics, &game);
-    const button = c.menu_button(true);
+    const button = c.ui_button_rect(c.UI_SOLO);
     try expect(pixel(&graphics, button.x, button.y) == c.map_color(graphics.screen, c.NET_COLOR));
     if (directory) |dir| {
         try saveScreenshot(&graphics, dir, "menu.bmp");
@@ -202,27 +202,274 @@ fn run(directory: ?[]const u8) !void {
         game.phase = c.TITLE;
     }
 
-    // Drive the actual mouse event handler: mode selection and result continuation.
-    var click = std.mem.zeroes(c.SDL_Event);
-    click.type = c.SDL_MOUSEBUTTONDOWN;
-    click.button.button = c.SDL_BUTTON_LEFT;
-    click.button.x = 600;
-    click.button.y = 240;
-    try expect(c.handle_event(&game, null, click, 0));
-    try expect(!game.solo and game.phase == c.SERVE);
-    game.score[0] = 5;
-    game.ball.pos = .{ .x = 700, .y = c.BALL_GROUND_Y };
-    game.ball.vel = .{ .x = 0, .y = 1 };
-    c.step_game(&game, 0);
-    try expect(game.phase == c.POINT_BREAK and game.score[0] == 6);
-    try expect(std.mem.indexOf(u8, std.mem.sliceTo(&game.message, 0), "Slime 1 wins!") != null);
-    c.step_game(&game, c.POINT_DELAY);
-    try expect(game.phase == c.RESULT and game.local_result[0] != 0);
-    try expect(c.handle_event(&game, null, click, 0));
-    try expect(game.phase == c.TITLE);
-    click.button.x = 100;
-    try expect(c.handle_event(&game, null, click, 0));
-    try expect(game.solo and game.phase == c.SERVE and game.bot_tier == 0);
+    try checkInputAndMenus(&graphics, directory);
+}
+
+fn key(state: *c.game_t, kind: u32, code: c.SDL_Keycode, now: f64) !void {
+    var event = std.mem.zeroes(c.SDL_Event);
+    event.type = kind;
+    event.key.keysym.sym = code;
+    try expect(c.handle_event(state, null, &event, now));
+}
+
+fn mouse(state: *c.game_t, kind: u32, x: c_int, y: c_int, now: f64) !void {
+    var event = std.mem.zeroes(c.SDL_Event);
+    event.type = kind;
+    event.button.button = c.SDL_BUTTON_LEFT;
+    event.button.x = x;
+    event.button.y = y;
+    try expect(c.handle_event(state, null, &event, now));
+}
+
+fn finger(state: *c.game_t, kind: u32, id: i64, x: f32, y: f32, now: f64) !void {
+    var event = std.mem.zeroes(c.SDL_Event);
+    event.type = kind;
+    event.tfinger.touchId = 1;
+    event.tfinger.fingerId = id;
+    event.tfinger.x = x / c.SCREEN_WIDTH;
+    event.tfinger.y = y / c.SCREEN_HEIGHT;
+    try expect(c.handle_event(state, null, &event, now));
+}
+
+fn clickButton(state: *c.game_t, button: c_int, touch: bool, now: f64) !void {
+    const rect = c.ui_button_rect(button);
+    const x = rect.x + @divTrunc(rect.w, 2);
+    const y = rect.y + @divTrunc(rect.h, 2);
+    if (touch) {
+        try finger(state, c.SDL_FINGERDOWN, 99, @floatFromInt(x), @floatFromInt(y), now);
+        try finger(state, c.SDL_FINGERUP, 99, @floatFromInt(x), @floatFromInt(y), now);
+    } else {
+        try mouse(state, c.SDL_MOUSEBUTTONDOWN, x, y, now);
+        try mouse(state, c.SDL_MOUSEBUTTONUP, x, y, now);
+    }
+}
+
+fn checkInputAndMenus(graphics: *c.graphics_t, directory: ?[]const u8) !void {
+    var state = std.mem.zeroes(c.game_t);
+    c.start_match(&state, true);
+    state.phase = c.TITLE;
+    try expect(c.menu_visible(&state));
+    try expect(!c.ui_button_enabled(&state, c.UI_CONTINUE));
+    try expect(!c.ui_button_enabled(&state, c.UI_REPLAY));
+    try expect(!c.ui_button_enabled(&state, c.UI_PAUSE));
+    c.render_game(graphics, &state);
+    const disabled = c.ui_button_rect(c.UI_CONTINUE);
+    try expect(pixel(graphics, disabled.x, disabled.y) == c.map_color(graphics.screen, 0x666666FF));
+    for ([_]c.SDL_Keycode{ c.SDLK_1, c.SDLK_2, c.SDLK_c, c.SDLK_p, c.SDLK_r, c.SDLK_k, c.SDLK_SPACE, c.SDLK_UP }) |code| {
+        try key(&state, c.SDL_KEYDOWN, code, 0);
+    }
+    try expect(state.phase == c.TITLE and !state.paused);
+    try clickButton(&state, c.UI_CONTINUE, true, 0);
+    try expect(state.phase == c.TITLE);
+    // Moving a touch over a menu button is a swipe, not a tap.
+    const solo = c.ui_button_rect(c.UI_SOLO);
+    const sx: f32 = @floatFromInt(solo.x + @divTrunc(solo.w, 2));
+    const sy: f32 = @floatFromInt(solo.y + @divTrunc(solo.h, 2));
+    try finger(&state, c.SDL_FINGERDOWN, 77, sx, sy, 0);
+    try finger(&state, c.SDL_FINGERMOTION, 77, sx + 40, sy, 0);
+    try finger(&state, c.SDL_FINGERUP, 77, sx + 40, sy, 0);
+    try expect(state.phase == c.TITLE);
+    try mouse(&state, c.SDL_MOUSEBUTTONDOWN, @intFromFloat(sx), @intFromFloat(sy), 0);
+    try expect(state.phase == c.TITLE);
+    try mouse(&state, c.SDL_MOUSEBUTTONUP, @intFromFloat(sx), @intFromFloat(sy), 0);
+    try expect(state.phase == c.SERVE and state.solo);
+
+    // Keyboard movement remains; mode selection and Continue have no shortcuts.
+    for ([_]c.SDL_Keycode{ c.SDLK_1, c.SDLK_2, c.SDLK_c, c.SDLK_r, c.SDLK_k }) |code| {
+        try key(&state, c.SDL_KEYDOWN, code, 0);
+    }
+    try expect(state.phase == c.SERVE and state.solo and !state.paused);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_RIGHT, 0);
+    try expect(state.players[0].vel.x == 6);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_LEFT, 0);
+    try expect(state.players[0].vel.x == -6);
+    try key(&state, c.SDL_KEYUP, c.SDLK_LEFT, 0);
+    try expect(state.players[0].vel.x == 6);
+    try key(&state, c.SDL_KEYUP, c.SDLK_RIGHT, 0);
+    try expect(state.players[0].vel.x == 0);
+    // Space is unavailable during a rally; P opens and closes the pause menu.
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_SPACE, 0);
+    try expect(state.phase == c.SERVE and !state.replay_requested);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_p, 0);
+    try expect(state.paused and c.menu_visible(&state));
+    try key(&state, c.SDL_KEYUP, c.SDLK_p, 0);
+    var repeat = std.mem.zeroes(c.SDL_Event);
+    repeat.type = c.SDL_KEYDOWN;
+    repeat.key.keysym.sym = c.SDLK_p;
+    repeat.key.repeat = 1;
+    try expect(c.handle_event(&state, null, &repeat, 0));
+    try expect(state.paused);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_p, 0);
+    try expect(!state.paused and state.phase == c.SERVE);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_UP, 0);
+    try expect(state.players[0].vel.y < 0);
+    c.reset_match(&state);
+    // Solo gestures can start anywhere on the court; reverse drag and jump.
+    try finger(&state, c.SDL_FINGERDOWN, 1, 600, 250, 0);
+    try expect(state.players[0].vel.x == 0);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 620, 250, 0);
+    try expect(state.players[0].vel.x == 6);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 590, 250, 0);
+    try expect(state.players[0].vel.x == -6);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 590, 220, 0);
+    try expect(state.players[0].vel.y == -11.625);
+    try finger(&state, c.SDL_FINGERUP, 1, 590, 220, 0);
+    try expect(state.players[0].vel.x == 0);
+    // A held keyboard direction resumes when a drag ends.
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_RIGHT, 0);
+    try finger(&state, c.SDL_FINGERDOWN, 2, 200, 250, 0);
+    try finger(&state, c.SDL_FINGERMOTION, 2, 180, 250, 0);
+    try expect(state.players[0].vel.x == -6);
+    try finger(&state, c.SDL_FINGERUP, 2, 180, 250, 0);
+    try expect(state.players[0].vel.x == 6);
+    try key(&state, c.SDL_KEYUP, c.SDLK_RIGHT, 0);
+    try expect(state.players[0].vel.x == 0);
+    // SDL's synthetic touch mouse events must not activate P a second time.
+    var synthetic = std.mem.zeroes(c.SDL_Event);
+    synthetic.type = c.SDL_MOUSEBUTTONDOWN;
+    synthetic.button.which = c.SDL_TOUCH_MOUSEID;
+    synthetic.button.button = c.SDL_BUTTON_LEFT;
+    synthetic.button.x = c.SCREEN_WIDTH - 26;
+    synthetic.button.y = 26;
+    try expect(c.handle_event(&state, null, &synthetic, 0));
+    synthetic.type = c.SDL_MOUSEBUTTONUP;
+    try expect(c.handle_event(&state, null, &synthetic, 0));
+    try expect(!state.paused);
+
+    try clickButton(&state, c.UI_PAUSE, true, 1);
+    try expect(state.paused and c.menu_visible(&state));
+    try clickButton(&state, c.UI_LOCAL, true, 1);
+    try expect(!state.solo and state.phase == c.SERVE and !state.paused);
+    // Separate fingers control each player without stealing the other gesture.
+    try finger(&state, c.SDL_FINGERDOWN, 11, 200, 250, 1);
+    try finger(&state, c.SDL_FINGERDOWN, 12, 600, 250, 1);
+    try finger(&state, c.SDL_FINGERMOTION, 11, 230, 220, 1);
+    try finger(&state, c.SDL_FINGERMOTION, 12, 570, 250, 1);
+    try expect(state.players[0].vel.x == 6 and state.players[1].vel.x == -6);
+    try expect(state.players[0].vel.y == -11.625);
+    try finger(&state, c.SDL_FINGERDOWN, 13, 620, 250, 1);
+    try finger(&state, c.SDL_FINGERMOTION, 13, 650, 250, 1);
+    try finger(&state, c.SDL_FINGERUP, 13, 650, 250, 1);
+    try expect(state.players[1].vel.x == -6);
+    try finger(&state, c.SDL_FINGERUP, 11, 230, 220, 1);
+    try expect(state.players[0].vel.x == 0 and state.players[1].vel.x == -6);
+    state.elapsed = 1;
+    try clickButton(&state, c.UI_PAUSE, false, 1);
+    try expect(state.paused and state.players[1].vel.x == 0);
+    c.render_game(graphics, &state);
+    if (directory) |dir| try saveScreenshot(graphics, dir, "pause.bmp");
+    const x = state.players[0].pos.x;
+    c.step_game(&state, 10);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_RIGHT, 10);
+    try expect(state.players[0].pos.x == x and state.players[0].vel.x == 0);
+    try clickButton(&state, c.UI_CONTINUE, true, 12);
+    try expect(!state.paused and state.phase == c.SERVE);
+    c.step_game(&state, 12);
+    try expect(state.elapsed == 1);
+
+    // R is active only during a recorded point break or replay; pause resumes it.
+    c.reset_match(&state);
+    for (0..23) |i| c.step_game(&state, @as(f64, @floatFromInt(i)) * c.FRAME_INTERVAL);
+    state.phase = c.POINT_BREAK;
+    state.point_deadline = 3;
+    state.last_step = 1.5;
+    try expect(c.ui_button_enabled(&state, c.UI_REPLAY));
+    try clickButton(&state, c.UI_REPLAY, true, 1.5);
+    try expect(state.replay_requested and state.phase == c.POINT_BREAK);
+    try expect(!c.ui_button_enabled(&state, c.UI_REPLAY));
+    c.step_game(&state, 3);
+    try expect(state.phase == c.REPLAY and c.ui_button_enabled(&state, c.UI_REPLAY));
+    c.render_game(graphics, &state);
+    if (directory) |dir| try saveScreenshot(graphics, dir, "replay.bmp");
+    try key(&state, c.SDL_KEYUP, c.SDLK_SPACE, 3);
+    try expect(state.phase == c.REPLAY);
+    try clickButton(&state, c.UI_PAUSE, true, 3);
+    try expect(state.paused and !c.ui_button_enabled(&state, c.UI_REPLAY));
+    try clickButton(&state, c.UI_CONTINUE, false, 4);
+    try expect(!state.paused and state.phase == c.REPLAY);
+    try clickButton(&state, c.UI_REPLAY, false, 4);
+    try expect(state.phase == c.SERVE and !c.ui_button_enabled(&state, c.UI_REPLAY));
+
+    // Space requests and exits replay, while holding it cannot skip playback.
+    c.step_game(&state, 4);
+    state.phase = c.POINT_BREAK;
+    state.point_deadline = 6;
+    try key(&state, c.SDL_KEYUP, c.SDLK_SPACE, 4);
+    try expect(!state.replay_requested);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_SPACE, 4);
+    try expect(state.replay_requested and state.phase == c.POINT_BREAK);
+    c.step_game(&state, 6);
+    try expect(state.phase == c.REPLAY);
+    repeat.key.keysym.sym = c.SDLK_SPACE;
+    try expect(c.handle_event(&state, null, &repeat, 6));
+    try expect(state.phase == c.REPLAY);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_p, 6);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_SPACE, 6);
+    try expect(state.paused and state.phase == c.REPLAY);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_p, 7);
+    try expect(!state.paused and state.phase == c.REPLAY);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_SPACE, 7);
+    try expect(state.phase == c.SERVE);
+
+    c.start_match(&state, true);
+    state.bot_tier = 1;
+    state.score[1] = 6;
+    state.server = 1;
+    c.finish_point(&state);
+    try expect(state.phase == c.RESULT and c.ui_button_enabled(&state, c.UI_CONTINUE));
+    c.render_game(graphics, &state);
+    if (directory) |dir| try saveScreenshot(graphics, dir, "loss.bmp");
+    try mouse(&state, c.SDL_MOUSEBUTTONDOWN, 20, 200, 0);
+    try mouse(&state, c.SDL_MOUSEBUTTONUP, 20, 200, 0);
+    try key(&state, c.SDL_KEYDOWN, c.SDLK_c, 0);
+    try expect(state.phase == c.RESULT);
+    try clickButton(&state, c.UI_CONTINUE, true, 0);
+    try expect(state.solo and state.bot_tier == 1 and state.phase == c.SERVE and state.score[1] == 0 and state.campaign_score == 0);
+    // Continue preserves stage advancement after wins and rematches local play.
+    c.start_match(&state, true);
+    state.score[0] = 6;
+    state.server = 0;
+    c.finish_point(&state);
+    const campaign_score = state.campaign_score;
+    try clickButton(&state, c.UI_CONTINUE, false, 0);
+    try expect(state.bot_tier == 1 and state.campaign_score == campaign_score);
+    state.bot_tier = c.BOT_TIERS - 1;
+    state.score[0] = 6;
+    c.finish_point(&state);
+    try clickButton(&state, c.UI_CONTINUE, true, 0);
+    try expect(state.solo and state.bot_tier == 0 and state.phase == c.SERVE and state.campaign_score == 0);
+    c.start_match(&state, false);
+    state.score[1] = 6;
+    state.server = 1;
+    c.finish_point(&state);
+    try clickButton(&state, c.UI_CONTINUE, true, 0);
+    try expect(!state.solo and state.phase == c.SERVE and state.score[1] == 0);
+    // Mode choices always start fresh, whether on initial, pause or result menus.
+    for (0..3) |screen_kind| {
+        for ([_]c_int{ c.UI_SOLO, c.UI_LOCAL }) |button| {
+            c.start_match(&state, true);
+            state.bot_tier = 2;
+            state.score[0] = 4;
+            state.campaign_score = 1234;
+            switch (screen_kind) {
+                0 => state.phase = c.TITLE,
+                1 => c.toggle_pause(&state, 0),
+                else => state.phase = c.RESULT,
+            }
+            try clickButton(&state, button, screen_kind != 1, 1);
+            try expect(state.solo == (button == c.UI_SOLO));
+            try expect(state.phase == c.SERVE and !state.paused and state.bot_tier == 0);
+            try expect(state.score[0] == 0 and state.score[1] == 0 and state.campaign_score == 0);
+        }
+    }
+    // Focus loss cancels a drag, preventing a stuck slime.
+    try finger(&state, c.SDL_FINGERDOWN, 14, 200, 250, 0);
+    try finger(&state, c.SDL_FINGERMOTION, 14, 220, 250, 0);
+    var focus = std.mem.zeroes(c.SDL_Event);
+    focus.type = c.SDL_WINDOWEVENT;
+    focus.window.event = c.SDL_WINDOWEVENT_FOCUS_LOST;
+    try expect(c.handle_event(&state, null, &focus, 0));
+    try expect(!state.input.drags[0].active and state.players[0].vel.x == 0);
 }
 
 pub export fn main(argc: c_int, argv: [*c][*c]u8) c_int {

@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("c");
-const text = @import("support.zig").text;
 comptime {
     _ = @import("modules.zig");
 }
@@ -19,7 +18,7 @@ fn gameFrame() bool {
     const now = frameTime();
     var event: c.SDL_Event = undefined;
     while (c.SDL_PollEvent(&event) != 0) {
-        if (!c.handle_event(&state, view.window, event, now)) return false;
+        if (!c.handle_event(&state, view.window, &event, now)) return false;
     }
     if (now < next_frame) return true;
     next_frame = now + c.FRAME_INTERVAL;
@@ -44,6 +43,8 @@ fn browserFrame() callconv(.c) void {
 pub fn main() u8 {
     c.SDL_SetMainReady();
     _ = c.SDL_SetHint(c.SDL_HINT_FRAMEBUFFER_ACCELERATION, "0");
+    _ = c.SDL_SetHint(c.SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+    _ = c.SDL_SetHint(c.SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     if (builtin.os.tag == .emscripten) {
         _ = c.SDL_SetHint(c.SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas");
     }
@@ -73,7 +74,6 @@ pub fn main() u8 {
     state.solo = true;
     c.reset_match(&state);
     state.phase = c.TITLE;
-    _ = text(&state.message, "Click the mouse to play!", .{});
     clock_frequency = @floatFromInt(c.SDL_GetPerformanceFrequency());
     next_frame = frameTime();
     if (builtin.os.tag == .emscripten) {

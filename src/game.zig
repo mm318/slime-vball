@@ -44,17 +44,16 @@ pub export fn finish_point(state: *c.game_t) void {
 }
 
 pub export fn continue_result(state: *c.game_t) void {
+    if (state.phase != c.RESULT) return;
     if (state.solo and state.server == 0 and state.bot_tier + 1 < c.BOT_TIERS) {
         state.bot_tier += 1;
-        c.reset_match(state);
     } else {
-        if (state.solo and state.server == 0) {
-            state.bot_tier = 0;
-            state.campaign_score = 0;
-        }
-        state.phase = c.TITLE;
-        _ = text(&state.message, "Click the mouse to play!", .{});
+        // Retry the same stage after a loss, as C used to do. A completed
+        // campaign starts over; local matches retain their selected mode.
+        if (state.solo and state.server == 0) state.bot_tier = 0;
+        state.campaign_score = 0;
     }
+    c.reset_match(state);
 }
 
 pub export fn horizontal_input(state: *c.game_t, side: c_int) void {
@@ -93,11 +92,13 @@ pub export fn point_message(state: *c.game_t) void {
 }
 
 pub export fn toggle_pause(state: *c.game_t, now: f64) void {
-    if (state.phase == c.TITLE or state.phase == c.RESULT or state.phase == c.REPLAY) return;
+    if (state.phase == c.TITLE or state.phase == c.RESULT) return;
+    c.clear_input(state);
     state.paused = !state.paused;
     if (state.paused) state.paused_at = now else if (state.phase == c.POINT_BREAK) {
         state.point_deadline += now - state.paused_at;
     }
+    if (!state.paused) state.last_step = now;
 }
 
 pub export fn advance_game_phase(state: *c.game_t, now: f64) bool {
