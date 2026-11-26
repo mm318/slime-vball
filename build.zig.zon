@@ -17,7 +17,6 @@
         "tests",
         "deps",
         "web_assets",
-        "slime_vball.desktop",
         "README.md",
         "COPYING",
     },

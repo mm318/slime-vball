@@ -64,10 +64,6 @@ pub fn build(b: *Build) void {
 
         const exe = b.addExecutable(.{ .name = "slime-vball", .root_module = game });
         b.installArtifact(exe);
-        if (target.result.os.tag == .linux) {
-            b.installFile("slime_vball.desktop", "share/applications/slime-vball.desktop");
-        }
-
         const run = b.addRunArtifact(exe);
         b.step("run", "Run Slime Volleyball on the desktop").dependOn(&run.step);
 
