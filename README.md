@@ -16,7 +16,7 @@ and flawless victories. Each stage has its own court and opponent colors.
 | --- | --- |
 | **Left / Right**, **Up** | Move and jump as player 1 on the left |
 | **A / D**, **W** | Move and jump as player 2 on the right in local play |
-| **Touch drag left / right** | Move until the finger lifts; reversing the drag reverses direction |
+| **Touch drag left / right** | Move until the finger lifts; direction changes apply immediately |
 | **Touch drag up** | Jump, including while moving horizontally |
 | **Space** or **R button** | Request replay during a point break, or leave replay; button grey when unavailable |
 | **P** or **P button** | Pause or resume |

@@ -304,16 +304,34 @@ fn checkInputAndMenus(graphics: *c.graphics_t, directory: ?[]const u8) !void {
     try key(&state, c.SDL_KEYDOWN, c.SDLK_UP, 0);
     try expect(state.players[0].vel.y < 0);
     c.reset_match(&state);
-    // Solo gestures can start anywhere on the court; reverse drag and jump.
+    // Small movements and reversals apply immediately, including before the
+    // next physics step. Reversing does not require crossing an older anchor.
     try finger(&state, c.SDL_FINGERDOWN, 1, 600, 250, 0);
     try expect(state.players[0].vel.x == 0);
-    try finger(&state, c.SDL_FINGERMOTION, 1, 620, 250, 0);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 601, 250, 0);
     try expect(state.players[0].vel.x == 6);
-    try finger(&state, c.SDL_FINGERMOTION, 1, 590, 250, 0);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 608, 250, 0);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 614, 250, 0);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 613, 250, 0);
     try expect(state.players[0].vel.x == -6);
-    try finger(&state, c.SDL_FINGERMOTION, 1, 590, 220, 0);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 613.5, 250, 0);
+    try expect(state.players[0].vel.x == 6);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 613.25, 250, 0);
+    try expect(state.players[0].vel.x == -6);
+    const start_x = state.players[0].pos.x;
+    c.step_game(&state, 0);
+    try expect(state.players[0].pos.x == start_x - 6);
+    // An upward drag needs 18 court pixels to jump. Vertical-only
+    // motion preserves horizontal movement; airborne swipes do not restart a jump.
+    try finger(&state, c.SDL_FINGERMOTION, 1, 613.25, 233, 0);
+    try expect(state.players[0].vel.y == 0 and state.players[0].vel.x == -6);
+    try finger(&state, c.SDL_FINGERMOTION, 1, 613.25, 231, 0);
     try expect(state.players[0].vel.y == -11.625);
-    try finger(&state, c.SDL_FINGERUP, 1, 590, 220, 0);
+    c.step_game(&state, c.FRAME_INTERVAL);
+    const airborne_vy = state.players[0].vel.y;
+    try finger(&state, c.SDL_FINGERMOTION, 1, 613.25, 211, 0);
+    try expect(state.players[0].vel.y == airborne_vy);
+    try finger(&state, c.SDL_FINGERUP, 1, 613.25, 211, 0);
     try expect(state.players[0].vel.x == 0);
     // A held keyboard direction resumes when a drag ends.
     try key(&state, c.SDL_KEYDOWN, c.SDLK_RIGHT, 0);
@@ -347,6 +365,12 @@ fn checkInputAndMenus(graphics: *c.graphics_t, directory: ?[]const u8) !void {
     try finger(&state, c.SDL_FINGERMOTION, 12, 570, 250, 1);
     try expect(state.players[0].vel.x == 6 and state.players[1].vel.x == -6);
     try expect(state.players[0].vel.y == -11.625);
+    try finger(&state, c.SDL_FINGERMOTION, 11, 229.5, 220, 1);
+    try expect(state.players[0].vel.x == -6 and state.players[1].vel.x == -6);
+    try finger(&state, c.SDL_FINGERMOTION, 12, 570.5, 250, 1);
+    try expect(state.players[0].vel.x == -6 and state.players[1].vel.x == 6);
+    try finger(&state, c.SDL_FINGERMOTION, 11, 230, 220, 1);
+    try finger(&state, c.SDL_FINGERMOTION, 12, 570, 250, 1);
     try finger(&state, c.SDL_FINGERDOWN, 13, 620, 250, 1);
     try finger(&state, c.SDL_FINGERMOTION, 13, 650, 250, 1);
     try finger(&state, c.SDL_FINGERUP, 13, 650, 250, 1);

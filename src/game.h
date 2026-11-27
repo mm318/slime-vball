@@ -67,7 +67,7 @@ typedef enum {
 typedef struct {
 	bool active;
 	int64_t device, finger;
-	float anchor_x, anchor_y;
+	float last_x, anchor_y;
 	int direction;
 } drag_t;
 

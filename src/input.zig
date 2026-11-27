@@ -5,7 +5,6 @@ const replay = @import("replay.zig");
 const ui = @import("ui.zig");
 
 const Point = struct { x: f32, y: f32 };
-const drag_threshold: f32 = 8;
 const jump_threshold: f32 = 18;
 const tap_slop: f32 = 12;
 
@@ -148,7 +147,7 @@ fn fingerEvent(state: *c.game_t, event: c.SDL_TouchFingerEvent, now: f64) void {
         if (pointerDown(state, point, true, event.touchId, event.fingerId) or !playing(state)) return;
         const side: usize = if (state.solo or point.x < c.SCREEN_WIDTH / 2) 0 else 1;
         const drag = &state.input.drags[side];
-        if (!drag.active) drag.* = .{ .active = true, .device = event.touchId, .finger = event.fingerId, .anchor_x = point.x, .anchor_y = point.y, .direction = 0 };
+        if (!drag.active) drag.* = .{ .active = true, .device = event.touchId, .finger = event.fingerId, .last_x = point.x, .anchor_y = point.y, .direction = 0 };
         return;
     }
     if (event.type == c.SDL_FINGERMOTION) pointerMove(state, point, event.touchId, event.fingerId);
@@ -163,10 +162,12 @@ fn fingerEvent(state: *c.game_t, event: c.SDL_TouchFingerEvent, now: f64) void {
             drag.direction = 0;
             syncMovement(state, side);
         } else if (event.type == c.SDL_FINGERMOTION and playing(state)) {
-            const dx = point.x - drag.anchor_x;
-            if (@abs(dx) >= drag_threshold) {
+            // Follow the latest horizontal motion, even a small reversal that
+            // stays on the same side of the gesture's earlier positions.
+            const dx = point.x - drag.last_x;
+            drag.last_x = point.x;
+            if (dx != 0) {
                 drag.direction = if (dx < 0) -1 else 1;
-                drag.anchor_x = point.x;
                 syncMovement(state, side);
             }
             if (drag.anchor_y - point.y >= jump_threshold) {
