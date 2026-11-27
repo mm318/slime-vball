@@ -2,18 +2,114 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Slime Volleyball">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
   <title>Slime Volleyball: One Slime</title>
   <style>
     body { margin: 1rem; text-align: center; font-family: system-ui, sans-serif; }
     canvas { display: block; max-width: 100%; height: auto; margin: 0 auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+    #display-controls { margin: .75rem 0; }
+    #fullscreen { min-height: 44px; padding: .5rem 1rem; font: inherit; touch-action: manipulation; }
+    #fullscreen-status { margin: 0 .5rem; }
+    #fullscreen-status:empty { display: none; }
+    body.immersive { margin: 0; overflow: hidden; background: #000; }
+    .immersive #game-frame {
+      position: fixed; inset: 0; box-sizing: border-box; height: 100vh; height: 100dvh;
+      display: flex; align-items: center; justify-content: center; background: #000;
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    }
+    .immersive #display-controls, .immersive #caption { display: none; }
   </style>
 </head>
 <body>
-  <canvas id="canvas" width="1125" height="563" tabindex="0" aria-label="Slime Volleyball court"></canvas>
-  <p>Tap or click a menu button to start or continue a match. Drag left/right to move and up to jump. Player 1 uses Left/Right and Up. In local play, player 2 uses A/D and W.</p>
+  <div id="game-frame">
+    <canvas id="canvas" width="1125" height="563" tabindex="0" aria-label="Slime Volleyball court"></canvas>
+  </div>
+  <div id="display-controls">
+    <button id="fullscreen" type="button">Fullscreen</button>
+    <span id="fullscreen-status" role="status"></span>
+  </div>
+  <p id="caption">Tap or click a menu button to start or continue a match. Drag left/right to move and up to jump. Player 1 uses Left/Right and Up. In local play, player 2 uses A/D and W.</p>
   <script>
     const canvas = document.getElementById("canvas");
+    const frame = document.getElementById("game-frame");
+    const fullscreenButton = document.getElementById("fullscreen");
+    const fullscreenStatus = document.getElementById("fullscreen-status");
+    const courtAspect = canvas.width / canvas.height;
+    const displayMode = window.matchMedia("(display-mode: standalone), (display-mode: fullscreen)");
+
+    function fullscreenElement() {
+      return document.fullscreenElement || document.webkitFullscreenElement;
+    }
+
+    function fullscreenSupported() {
+      return frame.requestFullscreen ? document.fullscreenEnabled !== false :
+        !!frame.webkitRequestFullscreen && document.webkitFullscreenEnabled !== false;
+    }
+
+    function fitCourt() {
+      if (!document.body.classList.contains("immersive")) {
+        canvas.style.width = "";
+        canvas.style.height = "";
+        return;
+      }
+      const style = getComputedStyle(frame);
+      const width = frame.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const height = frame.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+      const courtWidth = Math.max(0, Math.min(width, height * courtAspect));
+      // Resize the canvas element itself so SDL's pointer coordinates exclude
+      // the surrounding bars. Keep its drawing buffer at the game resolution.
+      canvas.style.width = courtWidth + "px";
+      canvas.style.height = courtWidth / courtAspect + "px";
+    }
+
+    function updatePresentation() {
+      const immersive = fullscreenElement() === frame || navigator.standalone === true || displayMode.matches;
+      document.body.classList.toggle("immersive", immersive);
+      fullscreenButton.hidden = immersive || !fullscreenSupported();
+      if (!immersive && !fullscreenSupported()) {
+        const appleTouchDevice = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+          (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+        fullscreenStatus.textContent = appleTouchDevice ?
+          "For fullscreen, use Share → Add to Home Screen, enable Open as Web App if shown, then launch the Home Screen icon." :
+          "Fullscreen is not available in this browser.";
+      } else fullscreenStatus.textContent = "";
+      fitCourt();
+      canvas.focus({ preventScroll: true });
+    }
+
+    function fullscreenFailed() {
+      fullscreenStatus.textContent = "Could not enter fullscreen. Try opening the game in its own tab and tap Fullscreen again.";
+    }
+
+    fullscreenButton.addEventListener("click", async () => {
+      fullscreenStatus.textContent = "";
+      canvas.focus({ preventScroll: true });
+      fullscreenButton.disabled = true;
+      try {
+        // Request directly from the tap to preserve the browser's user gesture.
+        const request = frame.requestFullscreen || frame.webkitRequestFullscreen;
+        await request.call(frame);
+      } catch {
+        fullscreenFailed();
+      } finally {
+        fullscreenButton.disabled = false;
+      }
+    });
+    document.addEventListener("fullscreenchange", updatePresentation);
+    document.addEventListener("webkitfullscreenchange", updatePresentation);
+    document.addEventListener("fullscreenerror", fullscreenFailed);
+    document.addEventListener("webkitfullscreenerror", fullscreenFailed);
+    window.addEventListener("resize", fitCourt);
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", fitCourt);
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(fitCourt).observe(frame);
+    if (displayMode.addEventListener) displayMode.addEventListener("change", updatePresentation);
+    else displayMode.addListener(updatePresentation);
+    updatePresentation();
+
     canvas.addEventListener("pointerdown", () => canvas.focus());
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     const gameKeys = ["a", "d", "w", "arrowleft", "arrowright", "arrowup", " ", "p"];

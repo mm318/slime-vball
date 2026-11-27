@@ -67,6 +67,12 @@ to focus the keyboard. To serve without launching a browser, append
 
 Serve `index.html`, `index.js`, and `index.wasm` together from `zig-out/web`.
 
+Tap **Fullscreen** to fit the court to the screen. Use the browser's fullscreen
+exit gesture or **Esc** to return to the page. The court keeps its proportions,
+with black bars where needed; the caption is hidden during fullscreen play.
+On iPhone, use Safari's **Share → Add to Home Screen**, enable **Open as Web App**
+if shown, and launch the Home Screen icon. Home Screen play uses the same layout.
+
 ## Development
 
 Run the checks with:
